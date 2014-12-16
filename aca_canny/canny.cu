@@ -37,7 +37,7 @@ void convolution(const pixel_t *in, pixel_t *out, const float *kernel,
             size_t c = 0;
             for (int j = -khalf; j <= khalf; j++)
                 for (int i = -khalf; i <= khalf; i++) {
-                    pixel += in[(n - j) * nx + m - i] * kernel[c];
+                    pixel += in[(n + j) * nx + m + i] * kernel[c];
                     c++;
                 }
  
@@ -278,6 +278,63 @@ void cannyDevice( const int *h_idata, const int w, const int h,
                   int * h_odata)
 {
      //TODO: insert your code here
+	const int nx = w;
+    const int ny = h;
+ 
+    pixel_t *G        = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
+    pixel_t *after_Gx = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
+    pixel_t *after_Gy = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
+    pixel_t *nms      = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
+ 
+    if (G == NULL || after_Gx == NULL || after_Gy == NULL ||
+        nms == NULL || reference == NULL) {
+        fprintf(stderr, "canny_edge_detection:"
+                " Failed memory allocation(s).\n");
+        exit(1);
+    }
+ 
+    // Gaussian filter
+    gaussian_filter(h_idata, reference, nx, ny, sigma);
+ 
+    const float Gx[] = {-1, 0, 1,
+                        -2, 0, 2,
+                        -1, 0, 1};
+ 
+    // Gradient along x
+    convolution(reference, after_Gx, Gx, nx, ny, 3);
+ 
+    const float Gy[] = { 1, 2, 1,
+                         0, 0, 0,
+                        -1,-2,-1};
+ 
+    // Gradient along y
+    convolution(reference, after_Gy, Gy, nx, ny, 3);
+ 
+    // Merging gradients
+    for (int i = 1; i < nx - 1; i++)
+        for (int j = 1; j < ny - 1; j++) {
+            const int c = i + nx * j;
+            G[c] = (pixel_t)(hypot((double)(after_Gx[c]), (double)( after_Gy[c]) ));
+        }
+ 
+    // Non-maximum suppression, straightforward implementation.
+    non_maximum_supression(after_Gx, after_Gy, G, nms, nx, ny);
+
+    // edges with nms >= tmax
+    memset(reference, 0, sizeof(pixel_t) * nx * ny);
+    first_edges(nms, reference, nx, ny, tmax);
+
+    // edges with nms >= tmin && neighbor is edge
+    bool changed;
+    do {
+        changed = false;
+        hysteresis_edges(nms, reference, nx, ny, tmin, &changed);
+    } while (changed==true);
+ 
+    free(after_Gx);
+    free(after_Gy);
+    free(G);
+    free(nms);
 }
 
 // print command line format
@@ -386,9 +443,12 @@ int main( int argc, char** argv)
     }
 
     // allocate mem for the result on host side
-    int* h_odata = (int*) malloc( h*w*sizeof(unsigned int));
-    int* reference = (int*) malloc( h*w*sizeof(unsigned int));
- 
+    //int* h_odata = (int*) malloc( h*w*sizeof(unsigned int));
+    //int* reference = (int*) malloc( h*w*sizeof(unsigned int));
+ 	
+ 	calloc(h_odata, h*w, sizeof(unsigned int));
+ 	calloc(reference, h*w, sizeof(unsigned int));
+
     // detect edges at host
     cudaEventRecord( startH, 0 );
     cannyHost(h_idata, w, h, tmin, tmax, sigma, reference);   
