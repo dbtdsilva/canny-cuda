@@ -316,8 +316,8 @@ void convolution_device(const pixel_t *in, pixel_t *out, const float *kernel,
     cudaMemcpy(devKernel, kernel, kernelSize, cudaMemcpyHostToDevice);
 
     cudaMemcpyToSymbol((void*) dev_nx, (void*) nx, sizeof(int));
-    cudaMemcpyToSymbol(dev_ny, ny, sizeof(int));
-    cudaMemcpyToSymbol(dev_khalf, khalf, sizeof(int));
+    cudaMemcpyToSymbol((void*) dev_ny, (void*) ny, sizeof(int));
+    cudaMemcpyToSymbol((void*) dev_khalf, (void*) khalf, sizeof(int));
 
 	dim3 gridSize((nx-2*khalf) / 16 , (ny-2*khalf) / 32);				
 	dim3 blockSize(16, 32);				// 512 threads (x - 16, y - 32)
