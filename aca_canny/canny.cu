@@ -21,7 +21,11 @@
 // Use int instead `unsigned char' so that we can
 // store negative values.
 typedef int pixel_t;
- 
+
+// Constant memory
+__constant__ int dev_nx;
+__constant__ int dev_nx;
+__constant__ int dev_khalf;
  
 // convolution of in image to out image using kernel of kn width
 void convolution(const pixel_t *in, pixel_t *out, const float *kernel,
@@ -273,6 +277,30 @@ void cannyHost( const int *h_idata, const int w, const int h,
 
 /* DEVICE OPERATIONS */
 
+void gaussian_filter_device(const pixel_t *in, pixel_t *out,
+                     const int nx, const int ny, const float sigma)
+{
+    const int n = 2 * (int)(2 * sigma) + 3;
+    const float mean = (float)floor(n / 2.0);
+    float kernel[n * n]; // variable length array
+ 
+    fprintf(stderr, "gaussian_filter: kernel size %d, sigma=%g\n",
+            n, sigma);
+    size_t c = 0;
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < n; j++) {
+            kernel[c] = exp(-0.5 * (pow((i - mean) / sigma, 2.0) +
+                                    pow((j - mean) / sigma, 2.0)))
+                        / (2 * M_PI * sigma * sigma);
+            c++;
+        }
+ 
+    convolution_device(in, out, kernel, nx, ny, n);
+    pixel_t max, min;
+    min_max(out, nx, ny, &min, &max);
+    normalize(out, nx, ny, n, min, max);
+}
+
 // convolution of in image to out image using kernel of kn width
 void convolution_device(const pixel_t *in, pixel_t *out, const float *kernel,
                  const int nx, const int ny, const int kn)
@@ -280,68 +308,51 @@ void convolution_device(const pixel_t *in, pixel_t *out, const float *kernel,
     assert(kn % 2 == 1);
     assert(nx > kn && ny > kn);
     const int khalf = kn / 2;
- 
-	dim3 gridSize(nx / 16 , ny / 32);				
+    
+    int memSize = nx * ny * sizeof(pixel_t);
+    int kernelSize = kn * kn * sizeof(float);
+
+    pixel_t *devIn;
+    pixel_t *devOut;
+    float *devKernel;
+
+    cudaMalloc((void**) &devIn, memSize);
+    cudaMalloc((void**) &devOut, memSize);
+    cudaMalloc((void**) &devKernel, kernelSize);
+
+    cudaMemcpy(devIn, in, memSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(devKernel, kernel, kernelSize, cudaMemcpyHostToDevice);
+
+    cudaMemcpyToSymbol(dev_nx, nx, sizeof(int));
+    cudaMemcpyToSymbol(dev_ny, ny, sizeof(int));
+    cudaMemcpyToSymbol(dev_khalf, khalf, sizeof(int));
+
+	dim3 gridSize((nx-2*khalf) / 16 , (ny-2*khalf) / 32);				
 	dim3 blockSize(16, 32);				// 512 threads (x - 16, y - 32)
     
+	convolutionPixel <<<gridSize, blockSize>>> (devIn, devKernel, devOut);
 	
-	/*for (int m = khalf; m < nx - khalf; m++)
-        for (int n = khalf; n < ny - khalf; n++) {
-            float pixel = 0.0;
-            size_t c = 0;
-            for (int j = -khalf; j <= khalf; j++)
-                for (int i = -khalf; i <= khalf; i++) {
-                    pixel += in[(n + j) * nx + m + i] * kernel[c];
-                    c++;
-                }
- 
-            out[n * nx + m] = (pixel_t)pixel;
-        }
-	*/
+    cudaMemcpy(out, devOut, memSize, cudaMemcpyDeviceToHost);
+
+    cudaFree(devIn);
+    cudaFree(devOut);
+    cudaFree(devKernel);
 }
-__global__  void convolutionPixel(int* num, int* pri) 
-{ 
-	int id, prime, i;
-	unsigned int number;
-	double aux;
 
-	int x = threadIdx.x + blockIdx.x * blockDim.x;
-	int y = threadIdx.y + blockIdx.y * blockDim.y;
-	id = x + y * (gridDim.x * blockDim.x);	
-	if(id < SIZE) pri[id] = id;
-} 
-
-void non_maximum_supression_device(const pixel_t *after_Gx, const pixel_t * after_Gy, const pixel_t *G, pixel_t *nms, 
-                            const int nx, const int ny)
+__global__  void convolutionPixel(pixel_t *in, float *kernel, pixel_t *out) 
 {
-    for (int i = 1; i < nx - 1; i++)
-        for (int j = 1; j < ny - 1; j++) {
-            const int c = i + nx * j;
-            const int nn = c - nx;
-            const int ss = c + nx;
-            const int ww = c + 1;
-            const int ee = c - 1;
-            const int nw = nn + 1;
-            const int ne = nn - 1;
-            const int sw = ss + 1;
-            const int se = ss - 1;
- 
-            const float dir = (float)(fmod(atan2(after_Gy[c],
-                                                 after_Gx[c]) + M_PI,
-                                           M_PI) / M_PI) * 8;
- 
-            if (((dir <= 1 || dir > 7) && G[c] > G[ee] &&
-                 G[c] > G[ww]) || // 0 deg
-                ((dir > 1 && dir <= 3) && G[c] > G[nw] &&
-                 G[c] > G[se]) || // 45 deg
-                ((dir > 3 && dir <= 5) && G[c] > G[nn] &&
-                 G[c] > G[ss]) || // 90 deg
-                ((dir > 5 && dir <= 7) && G[c] > G[ne] &&
-                 G[c] > G[sw]))   // 135 deg
-                nms[c] = G[c];
-            else
-                nms[c] = 0;
-        }
+	int x = threadIdx.x + blockIdx.x * blockDim.x + dev_khalf;
+	int y = threadIdx.y + blockIdx.y * blockDim.y + dev_khalf;
+	
+    if((x < (dev_nx - dev_khalf)) && (y < (dev_ny - dev_khalf)))
+    {
+        float pixel = 0.0;
+        size_t c = 0;
+        for(int j = -dev_khalf; j <= dev_khalf; j++) 
+            for(int i = -dev_khalf; i <= dev_khalf; i++)
+                pixel += in[(y - j) * dev_nx + x - i] * kernel[c++];
+        out[y * dev_nx + x] = (pixel_t) pixel;
+    }
 }
 
 // canny edge detector code to run on the GPU
@@ -365,8 +376,8 @@ void cannyDevice( const int *h_idata, const int w, const int h,
         exit(1);
     }
  
-    // Gaussian filter
-    gaussian_filter(h_idata, h_odata, nx, ny, sigma);
+    // Gaussian filter using convolution_device
+    gaussian_filter_device(h_idata, h_odata, nx, ny, sigma);
  
     const float Gx[] = {-1, 0, 1,
                         -2, 0, 2,
@@ -380,7 +391,7 @@ void cannyDevice( const int *h_idata, const int w, const int h,
                         -1,-2,-1};
  
     // Gradient along y
-    convolution(h_odata, after_Gy, Gy, nx, ny, 3);
+    convolution_device(h_odata, after_Gy, Gy, nx, ny, 3);
  
     // Merging gradients
     for (int i = 1; i < nx - 1; i++)
