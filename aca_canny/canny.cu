@@ -24,7 +24,7 @@ typedef int pixel_t;
 
 // Constant memory
 __constant__ int dev_nx;
-__constant__ int dev_nx;
+__constant__ int dev_ny;
 __constant__ int dev_khalf;
  
 // convolution of in image to out image using kernel of kn width
@@ -277,30 +277,6 @@ void cannyHost( const int *h_idata, const int w, const int h,
 
 /* DEVICE OPERATIONS */
 
-void gaussian_filter_device(const pixel_t *in, pixel_t *out,
-                     const int nx, const int ny, const float sigma)
-{
-    const int n = 2 * (int)(2 * sigma) + 3;
-    const float mean = (float)floor(n / 2.0);
-    float kernel[n * n]; // variable length array
- 
-    fprintf(stderr, "gaussian_filter: kernel size %d, sigma=%g\n",
-            n, sigma);
-    size_t c = 0;
-    for (int i = 0; i < n; i++)
-        for (int j = 0; j < n; j++) {
-            kernel[c] = exp(-0.5 * (pow((i - mean) / sigma, 2.0) +
-                                    pow((j - mean) / sigma, 2.0)))
-                        / (2 * M_PI * sigma * sigma);
-            c++;
-        }
- 
-    convolution_device(in, out, kernel, nx, ny, n);
-    pixel_t max, min;
-    min_max(out, nx, ny, &min, &max);
-    normalize(out, nx, ny, n, min, max);
-}
-
 // convolution of in image to out image using kernel of kn width
 void convolution_device(const pixel_t *in, pixel_t *out, const float *kernel,
                  const int nx, const int ny, const int kn)
@@ -353,6 +329,30 @@ __global__  void convolutionPixel(pixel_t *in, float *kernel, pixel_t *out)
                 pixel += in[(y - j) * dev_nx + x - i] * kernel[c++];
         out[y * dev_nx + x] = (pixel_t) pixel;
     }
+}
+
+void gaussian_filter_device(const pixel_t *in, pixel_t *out,
+                     const int nx, const int ny, const float sigma)
+{
+    const int n = 2 * (int)(2 * sigma) + 3;
+    const float mean = (float)floor(n / 2.0);
+    float kernel[n * n]; // variable length array
+ 
+    fprintf(stderr, "gaussian_filter: kernel size %d, sigma=%g\n",
+            n, sigma);
+    size_t c = 0;
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < n; j++) {
+            kernel[c] = exp(-0.5 * (pow((i - mean) / sigma, 2.0) +
+                                    pow((j - mean) / sigma, 2.0)))
+                        / (2 * M_PI * sigma * sigma);
+            c++;
+        }
+ 
+    convolution_device(in, out, kernel, nx, ny, n);
+    pixel_t max, min;
+    min_max(out, nx, ny, &min, &max);
+    normalize(out, nx, ny, n, min, max);
 }
 
 // canny edge detector code to run on the GPU
