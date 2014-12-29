@@ -22,11 +22,6 @@
 // store negative values.
 typedef int pixel_t;
 
-// Constant memory
-__constant__ int dev_nx;
-__constant__ int dev_ny;
-__constant__ int dev_khalf;
- 
 // convolution of in image to out image using kernel of kn width
 void convolution(const pixel_t *in, pixel_t *out, const float *kernel,
                  const int nx, const int ny, const int kn)
@@ -277,19 +272,20 @@ void cannyHost( const int *h_idata, const int w, const int h,
 
 /* DEVICE OPERATIONS */
 
-__global__  void convolutionPixel(pixel_t *in, float *kernel, pixel_t *out) 
+__global__  void convolutionPixel(pixel_t *in, float *kernel, pixel_t *out,
+                    const int nx, const int ny, const int khalf) 
 {
-    int x = threadIdx.x + blockIdx.x * blockDim.x + dev_khalf;
-    int y = threadIdx.y + blockIdx.y * blockDim.y + dev_khalf;
+    int x = threadIdx.x + blockIdx.x * blockDim.x + khalf;
+    int y = threadIdx.y + blockIdx.y * blockDim.y + khalf;
     
-    if((x < (dev_nx - dev_khalf)) && (y < (dev_ny - dev_khalf)))
+    if((x < (nx - khalf)) && (y < (ny - khalf)))
     {
         float pixel = 0.0;
         size_t c = 0;
-        for(int j = -dev_khalf; j <= dev_khalf; j++) 
-            for(int i = -dev_khalf; i <= dev_khalf; i++)
-                pixel += in[(y - j) * dev_nx + x - i] * kernel[c++];
-        out[y * dev_nx + x] = (pixel_t) pixel;
+        for(int j = -khalf; j <= khalf; j++) 
+            for(int i = -khalf; i <= khalf; i++)
+                pixel += in[(y - j) * nx + x - i] * kernel[c++];
+        out[y * nx + x] = (pixel_t) pixel;
     }
 }
 
@@ -315,14 +311,10 @@ void convolution_device(const pixel_t *in, pixel_t *out, const float *kernel,
     cudaMemcpy(devIn, in, memSize, cudaMemcpyHostToDevice);
     cudaMemcpy(devKernel, kernel, kernelSize, cudaMemcpyHostToDevice);
 
-    cudaMemcpyToSymbol((void*) dev_nx, (void*) nx, sizeof(int));
-    cudaMemcpyToSymbol((void*) dev_ny, (void*) ny, sizeof(int));
-    cudaMemcpyToSymbol((void*) dev_khalf, (void*) khalf, sizeof(int));
-
 	dim3 gridSize((nx-2*khalf) / 16 , (ny-2*khalf) / 32);				
 	dim3 blockSize(16, 32);				// 512 threads (x - 16, y - 32)
     
-	convolutionPixel <<<gridSize, blockSize>>> (devIn, devKernel, devOut);
+	convolutionPixel <<<gridSize, blockSize>>> (devIn, devKernel, devOut, );
 	
     cudaMemcpy(out, devOut, memSize, cudaMemcpyDeviceToHost);
 
