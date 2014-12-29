@@ -277,6 +277,22 @@ void cannyHost( const int *h_idata, const int w, const int h,
 
 /* DEVICE OPERATIONS */
 
+__global__  void convolutionPixel(pixel_t *in, float *kernel, pixel_t *out) 
+{
+    int x = threadIdx.x + blockIdx.x * blockDim.x + dev_khalf;
+    int y = threadIdx.y + blockIdx.y * blockDim.y + dev_khalf;
+    
+    if((x < (dev_nx - dev_khalf)) && (y < (dev_ny - dev_khalf)))
+    {
+        float pixel = 0.0;
+        size_t c = 0;
+        for(int j = -dev_khalf; j <= dev_khalf; j++) 
+            for(int i = -dev_khalf; i <= dev_khalf; i++)
+                pixel += in[(y - j) * dev_nx + x - i] * kernel[c++];
+        out[y * dev_nx + x] = (pixel_t) pixel;
+    }
+}
+
 // convolution of in image to out image using kernel of kn width
 void convolution_device(const pixel_t *in, pixel_t *out, const float *kernel,
                  const int nx, const int ny, const int kn)
@@ -313,22 +329,6 @@ void convolution_device(const pixel_t *in, pixel_t *out, const float *kernel,
     cudaFree(devIn);
     cudaFree(devOut);
     cudaFree(devKernel);
-}
-
-__global__  void convolutionPixel(pixel_t *in, float *kernel, pixel_t *out) 
-{
-	int x = threadIdx.x + blockIdx.x * blockDim.x + dev_khalf;
-	int y = threadIdx.y + blockIdx.y * blockDim.y + dev_khalf;
-	
-    if((x < (dev_nx - dev_khalf)) && (y < (dev_ny - dev_khalf)))
-    {
-        float pixel = 0.0;
-        size_t c = 0;
-        for(int j = -dev_khalf; j <= dev_khalf; j++) 
-            for(int i = -dev_khalf; i <= dev_khalf; i++)
-                pixel += in[(y - j) * dev_nx + x - i] * kernel[c++];
-        out[y * dev_nx + x] = (pixel_t) pixel;
-    }
 }
 
 void gaussian_filter_device(const pixel_t *in, pixel_t *out,
