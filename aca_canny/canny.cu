@@ -278,7 +278,8 @@ __global__  void convolutionPixel(pixel_t *in, float *kernel, pixel_t *out,
     int x = threadIdx.x + blockIdx.x * blockDim.x + khalf;
     int y = threadIdx.y + blockIdx.y * blockDim.y + khalf;
     
-    if((x < (nx - khalf)) && (y < (ny - khalf)))
+    if((x >= khalf) && (x < (nx - khalf)) &&
+        (y >= khalf) && (y < (ny - khalf)))
     {
         float pixel = 0.0;
         size_t c = 0;
