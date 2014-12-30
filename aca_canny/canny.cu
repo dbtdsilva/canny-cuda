@@ -349,9 +349,9 @@ __global__  void non_maximum_supression_kernel(pixel_t *afterGx, pixel_t *afterG
            ((dir > 1 && dir <= 3) && G[c] > G[nw] && G[c] > G[se]) ||
            ((dir > 3 && dir <= 5) && G[c] > G[nn] && G[c] > G[ss]) ||
            ((dir > 5 && dir <= 7) && G[c] > G[ne] && G[c] > G[sw]))
-            nms[c] = G[c];
+            Nms[c] = G[c];
         else
-            nms[c] = 0;
+            Nms[c] = 0;
     }
 }
 
