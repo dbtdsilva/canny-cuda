@@ -275,8 +275,8 @@ void cannyHost( const int *h_idata, const int w, const int h,
 __global__  void convolutionPixel(pixel_t *in, float *kernel, pixel_t *out,
                     int nx, int ny, int khalf) 
 {
-    int x = threadIdx.x + blockIdx.x * blockDim.x;
-    int y = threadIdx.y + blockIdx.y * blockDim.y;
+    int x = threadIdx.x + blockIdx.x * blockDim.x + khalf;
+    int y = threadIdx.y + blockIdx.y * blockDim.y + khalf;
     
     if((x >= khalf) && (x < (nx - khalf)) &&
         (y >= khalf) && (y < (ny - khalf)))
