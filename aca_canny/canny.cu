@@ -326,29 +326,6 @@ void convolution_device(const pixel_t *in, pixel_t *out, const float *kernel,
     cudaFree(devKernel);
 }
 
-void gaussian_filter_device(const pixel_t *in, pixel_t *out,
-                     const int nx, const int ny, const float sigma)
-{
-    const int n = 2 * (int)(2 * sigma) + 3;
-    const float mean = (float)floor(n / 2.0);
-    float kernel[n * n]; // variable length array
- 
-    fprintf(stderr, "gaussian_filter: kernel size %d, sigma=%g\n",
-            n, sigma);
-    size_t c = 0;
-    for (int i = 0; i < n; i++)
-        for (int j = 0; j < n; j++) {
-            kernel[c] = exp(-0.5 * (pow((i - mean) / sigma, 2.0) +
-                                    pow((j - mean) / sigma, 2.0)))
-                        / (2 * M_PI * sigma * sigma);
-            c++;
-        }
- 
-    convolution_device(in, out, kernel, nx, ny, n);
-    pixel_t max, min;
-    min_max(out, nx, ny, &min, &max);
-    normalize(out, nx, ny, n, min, max);
-}
 
 // canny edge detector code to run on the GPU
 void cannyDevice( const int *h_idata, const int w, const int h, 
@@ -372,7 +349,7 @@ void cannyDevice( const int *h_idata, const int w, const int h,
     }
  
     // Gaussian filter using convolution_device
-    gaussian_filter_device(h_idata, h_odata, nx, ny, sigma);
+    gaussian_filter(h_idata, h_odata, nx, ny, sigma);
  
     const float Gx[] = {-1, 0, 1,
                         -2, 0, 2,
