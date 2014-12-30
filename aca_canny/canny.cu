@@ -309,6 +309,8 @@ void convolution_device(const pixel_t *in, pixel_t *out, const float *kernel,
     cudaMalloc((void**) &devOut, memSize);
     cudaMalloc((void**) &devKernel, kernelSize);
 
+    cudaMemset(devOut, 0, memSize);
+
     cudaMemcpy(devIn, in, memSize, cudaMemcpyHostToDevice);
     cudaMemcpy(devKernel, kernel, kernelSize, cudaMemcpyHostToDevice);
 
