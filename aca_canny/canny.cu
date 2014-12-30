@@ -272,7 +272,7 @@ void cannyHost( const int *h_idata, const int w, const int h,
 
 /* DEVICE OPERATIONS */
 
-__global__  void convolutionPixel(pixel_t *in, float *kernel, pixel_t *out,
+__global__  void convolution_kernel(pixel_t *in, float *kernel, pixel_t *out,
                     int nx, int ny, int khalf) 
 {
     int x = threadIdx.x + blockIdx.x * blockDim.x + khalf;
@@ -295,10 +295,10 @@ void convolution_device(const pixel_t *in, pixel_t *out, const float *kernel,
 {
     assert(kn % 2 == 1);
     assert(nx > kn && ny > kn);
-    const int khalf = kn / 2;
     
-    int memSize = nx * ny * sizeof(pixel_t);
-    int kernelSize = kn * kn * sizeof(float);
+    const int khalf = kn / 2;
+    const int memSize = nx * ny * sizeof(pixel_t);
+    const int kernelSize = kn * kn * sizeof(float);
 
     pixel_t *devIn;
     pixel_t *devOut;
@@ -316,7 +316,7 @@ void convolution_device(const pixel_t *in, pixel_t *out, const float *kernel,
 	dim3 gridSize(ceil((nx - 2*khalf)/ 16.0), ceil((ny - 2*khalf)/ 32.0));				
 	dim3 blockSize(16, 32);				// 512 threads (x - 16, y - 32)
     
-	convolutionPixel <<<gridSize, blockSize>>> (devIn, devKernel, devOut, nx, ny, khalf);
+	convolution_kernel <<<gridSize, blockSize>>> (devIn, devKernel, devOut, nx, ny, khalf);
 	
     cudaMemcpy(out, devOut, memSize, cudaMemcpyDeviceToHost);
 
@@ -325,6 +325,70 @@ void convolution_device(const pixel_t *in, pixel_t *out, const float *kernel,
     cudaFree(devKernel);
 }
 
+__global__  void non_maximum_supression_kernel(pixel_t *afterGx, pixel_t *afterGy,
+                            pixel_t *G, pixel_t *Nms, int nx, int ny)
+{
+    int x = threadIdx.x + blockIdx.x * blockDim.x + 1;
+    int y = threadIdx.y + blockIdx.y * blockDim.y + 1;
+    
+    if((x < (nx - 1)) && (y < (ny - 1)))
+    {
+        int c = x + nx * y;
+        int nn = c - nx;
+        int ss = c + nx;
+        int ww = c + 1;
+        int ee = c - 1;
+        int nw = nn + 1;
+        int ne = nn - 1;
+        int sw = ss + 1;
+        int se = ss - 1;
+
+        float dir = (float) (fmod(atan2(afterGy[c], afterGx[c]) + M_PI, M_PI) / M_PI) * 8;
+
+        if(((dir <= 1 || dir > 7) && G[c] > G[ee] && G[c] > G[ww]) ||
+           ((dir > 1 && dir <= 3) && G[c] > G[nw] && G[c] > G[se]) ||
+           ((dir > 3 && dir <= 5) && G[c] > G[nn] && G[c] > G[ss]) ||
+           ((dir > 5 && dir <= 7) && G[c] > G[ne] && G[c] > G[sw]))
+            nms[c] = G[c];
+        else
+            nms[c] = 0;
+    }
+}
+
+// Canny non-maximum suppression
+void non_maximum_supression_device(const pixel_t *after_Gx, const pixel_t * after_Gy,
+                    const pixel_t *G, pixel_t *nms, const int nx, const int ny)
+{
+    const int memSize = nx * ny * sizeof(pixel_t);
+
+    pixel_t *devAfterGx;
+    pixel_t *devAfterGy;
+    pixel_t *devG;
+    pixel_t *devNms;
+
+    cudaMalloc((void**) &devAfterGx, memSize);
+    cudaMalloc((void**) &devAfterGy, memSize);
+    cudaMalloc((void**) &devG, memSize);
+    cudaMalloc((void**) &devNms, memSize);
+
+    cudaMemset(devNms, 0, memSize);
+
+    cudaMemcpy(devAfterGx, after_Gx, memSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(devAfterGy, after_Gy, memSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(devG, G, memSize, cudaMemcpyHostToDevice);
+
+    dim3 gridSize(ceil((nx - 2)/ 16.0), ceil((ny - 2)/ 32.0));              
+    dim3 blockSize(16, 32);             // 512 threads (x - 16, y - 32)
+    
+    non_maximum_supression_kernel <<<gridSize, blockSize>>> (devAfterGx, devAfterGy, devG, devNms, nx, ny);
+
+    cudaMemcpy(nms, devNms, memSize, cudaMemcpyDeviceToHost);
+
+    cudaFree(devAfterGx);
+    cudaFree(devAfterGy);
+    cudaFree(devG);
+    cudaFree(devNms);
+}
 
 // canny edge detector code to run on the GPU
 void cannyDevice( const int *h_idata, const int w, const int h, 
@@ -372,7 +436,7 @@ void cannyDevice( const int *h_idata, const int w, const int h,
         }
  
     // Non-maximum suppression, straightforward implementation.
-    non_maximum_supression(after_Gx, after_Gy, G, nms, nx, ny);
+    non_maximum_supression_device(after_Gx, after_Gy, G, nms, nx, ny);
 
     // edges with nms >= tmax
     memset(h_odata, 0, sizeof(pixel_t) * nx * ny);
