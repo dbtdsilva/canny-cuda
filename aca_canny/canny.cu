@@ -430,6 +430,66 @@ void first_edges_device(const pixel_t *nms, pixel_t *reference,
     cudaFree(devReference);
 }
 
+__global__ void hysteresis_edges_kernel(pixel_t *nms, pixel_t *ref, int nx, int ny, int tmin, bool *changed)
+{
+    int x = threadIdx.x + blockIdx.x * blockDim.x + 1;
+    int y = threadIdx.y + blockIdx.y * blockDim.y + 1;
+
+    if((x < (nx - 1)) && (y < (ny - 1)))
+    {
+        size_t t = x + nx * y;
+
+        int nbs[8];
+        nbs[0] = t - nx;
+        nbs[1] = t + nx;
+        nbs[2] = t + 1;
+        nbs[3] = t - 1;
+        nbs[4] = nbs[0] + 1;
+        nbs[5] = nbs[0] - 1;
+        nbs[6] = nbs[1] + 1;
+        nbs[7] = nbs[1] - 1;
+
+        if(nms[t] >= tmin && ref[t] == 0) {
+            for(int k = 0; k < 8; k++)
+                if(ref[nbs[k]] != 0) {
+                    ref[t] = MAX_BRIGHTNESS;
+                    *changed = true;
+                }
+        }
+    }
+}
+
+// edges found in after first passes for nms > tmin && neighbor is edge
+void hysteresis_edges_device(const pixel_t *nms, pixel_t *reference, 
+                      const int nx, const int ny, const int tmin, bool *pchanged)
+{
+    const int memSize = nx * ny * sizeof(pixel_t);
+
+    pixel_t *devNms;
+    pixel_t *devReference;
+    bool *devChanged;
+
+    cudaMalloc((void**) &devNms, memSize);
+    cudaMalloc((void**) &devReference, memSize);
+    cudaMalloc((void**) &devChanged, sizeof(bool));
+
+    cudaMemcpy(devNms, nms, memSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(devReference, reference, memSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(devChanged, pchanged, sizeof(bool), cudaMemcpyHostToDevice);
+
+    dim3 gridSize(ceil((nx - 2)/ 16.0), ceil((ny - 2)/ 32.0));              
+    dim3 blockSize(16, 32);             // 512 threads (x - 16, y - 32)
+
+    hysteresis_edges_kernel <<<gridSize, blockSize>>> (devNms, devReference, nx, ny, tmin, devChanged);
+
+    cudaMemcpy(reference, devReference, memSize, cudaMemcpyDeviceToHost);
+    cudaMemcpy(pchanged, devChanged, sizeof(bool), cudaMemcpyDeviceToHost);
+
+    cudaFree(devNms);
+    cudaFree(devReference);
+    cudaFree(devChanged);
+}
+
 // canny edge detector code to run on the GPU
 void cannyDevice( const int *h_idata, const int w, const int h, 
                   const int tmin, const int tmax, 
@@ -486,7 +546,7 @@ void cannyDevice( const int *h_idata, const int w, const int h,
     bool changed;
     do {
         changed = false;
-        hysteresis_edges(nms, h_odata, nx, ny, tmin, &changed);
+        hysteresis_edges_device(nms, h_odata, nx, ny, tmin, &changed);
     } while (changed==true);
  
     free(after_Gx);
