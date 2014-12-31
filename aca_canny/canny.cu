@@ -26,6 +26,8 @@ typedef int pixel_t;
 __constant__ int const_nx;
 __constant__ int const_ny;
 __constant__ int const_khalf;
+__constant__ int const_tmin;
+__constant__ int const_tmax;
 
 // convolution of in image to out image using kernel of kn width
 void convolution(const pixel_t *in, pixel_t *out, const float *kernel,
@@ -396,7 +398,7 @@ void non_maximum_supression_device(const pixel_t *after_Gx, const pixel_t * afte
     cudaFree(devNms);
 }
 
-__global__ void first_edges_kernel(pixel_t *nms, pixel_t *ref, int tmax)
+__global__ void first_edges_kernel(pixel_t *nms, pixel_t *ref)
 {
     int x = threadIdx.x + blockIdx.x * blockDim.x + 1;
     int y = threadIdx.y + blockIdx.y * blockDim.y + 1;
@@ -404,14 +406,14 @@ __global__ void first_edges_kernel(pixel_t *nms, pixel_t *ref, int tmax)
     if((x < (const_nx - 1)) && (y < (const_ny - 1)))
     {
         size_t c = x + const_nx * y;
-        if(nms[c] >= tmax)
+        if(nms[c] >= const_tmax)
             ref[c] = MAX_BRIGHTNESS;
     }
 }
 
 // edges found in first pass for nms > tmax
 void first_edges_device(const pixel_t *nms, pixel_t *reference, 
-                 const int nx, const int ny, const int tmax)
+                 const int nx, const int ny)
 {
     const int memSize = nx * ny * sizeof(pixel_t);
 
@@ -428,7 +430,7 @@ void first_edges_device(const pixel_t *nms, pixel_t *reference,
     dim3 gridSize(ceil((nx - 2)/ 16.0), ceil((ny - 2)/ 32.0));              
     dim3 blockSize(16, 32);             // 512 threads (x - 16, y - 32)
 
-    first_edges_kernel <<<gridSize, blockSize>>> (devNms, devReference, tmax);
+    first_edges_kernel <<<gridSize, blockSize>>> (devNms, devReference);
 
     cudaMemcpy(reference, devReference, memSize, cudaMemcpyDeviceToHost);
 
@@ -436,7 +438,7 @@ void first_edges_device(const pixel_t *nms, pixel_t *reference,
     cudaFree(devReference);
 }
 
-__global__ void hysteresis_edges_kernel(pixel_t *nms, pixel_t *ref, int tmin, bool *changed)
+__global__ void hysteresis_edges_kernel(pixel_t *nms, pixel_t *ref, bool *changed)
 {
     int x = threadIdx.x + blockIdx.x * blockDim.x + 1;
     int y = threadIdx.y + blockIdx.y * blockDim.y + 1;
@@ -445,7 +447,7 @@ __global__ void hysteresis_edges_kernel(pixel_t *nms, pixel_t *ref, int tmin, bo
     {
         size_t t = x + const_nx * y;
 
-        if(nms[t] >= tmin && ref[t] == 0)
+        if(nms[t] >= const_tmin && ref[t] == 0)
         {
             int nbs[8];
             nbs[0] = t - const_nx;
@@ -469,7 +471,7 @@ __global__ void hysteresis_edges_kernel(pixel_t *nms, pixel_t *ref, int tmin, bo
 
 // edges found in after first passes for nms > tmin && neighbor is edge
 void hysteresis_edges_device(const pixel_t *nms, pixel_t *reference, 
-                      const int nx, const int ny, const int tmin, bool *pchanged)
+                      const int nx, const int ny, bool *pchanged)
 {
     const int memSize = nx * ny * sizeof(pixel_t);
 
@@ -488,7 +490,7 @@ void hysteresis_edges_device(const pixel_t *nms, pixel_t *reference,
     dim3 gridSize(ceil((nx - 2)/ 16.0), ceil((ny - 2)/ 32.0));              
     dim3 blockSize(16, 32);             // 512 threads (x - 16, y - 32)
 
-    hysteresis_edges_kernel <<<gridSize, blockSize>>> (devNms, devReference, tmin, devChanged);
+    hysteresis_edges_kernel <<<gridSize, blockSize>>> (devNms, devReference, devChanged);
 
     cudaMemcpy(reference, devReference, memSize, cudaMemcpyDeviceToHost);
     cudaMemcpy(pchanged, devChanged, sizeof(bool), cudaMemcpyDeviceToHost);
@@ -509,6 +511,8 @@ void cannyDevice( const int *h_idata, const int w, const int h,
 
     cudaMemcpyToSymbol(const_nx, &nx, sizeof(int));
     cudaMemcpyToSymbol(const_ny, &ny, sizeof(int));
+    cudaMemcpyToSymbol(const_tmin, &tmin, sizeof(int));
+    cudaMemcpyToSymbol(const_tmax, &tmax, sizeof(int));
 
     pixel_t *G        = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
     pixel_t *after_Gx = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
@@ -551,13 +555,13 @@ void cannyDevice( const int *h_idata, const int w, const int h,
 
     // edges with nms >= tmax
     memset(h_odata, 0, sizeof(pixel_t) * nx * ny);
-    first_edges_device(nms, h_odata, nx, ny, tmax);
+    first_edges_device(nms, h_odata, nx, ny);
 
     // edges with nms >= tmin && neighbor is edge
     bool changed;
     do {
         changed = false;
-        hysteresis_edges_device(nms, h_odata, nx, ny, tmin, &changed);
+        hysteresis_edges_device(nms, h_odata, nx, ny, &changed);
     } while (changed==true);
  
     free(after_Gx);
