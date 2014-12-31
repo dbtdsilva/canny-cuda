@@ -430,7 +430,50 @@ void first_edges_device(const pixel_t *nms, pixel_t *reference,
     cudaFree(devReference);
 }
 
-__global__ void hysteresis_edges_kernel(pixel_t *nms, pixel_t *ref, int nx, int ny, int tmin, bool *changed)
+__global__ void hysteresis_edges_subkernel(pixel_t *nms, pixel_t *ref, int nx, int ny,
+                                        int t, bool *changed)
+{
+    int nbs;
+
+    switch(threadIdx.x) {
+        case 0:
+            nbs = t - nx;
+            break;
+        case 1:
+            nbs = t + nx;
+            break;
+        case 2:
+            nbs = t + 1;
+            break;
+        case 3:
+            nbs = t - 1;
+            break;
+        case 4:
+            nbs = t - nx + 1;
+            break;
+        case 5:
+            nbs = t - nx - 1;
+            break;
+        case 6:
+            nbs = t + nx + 1;
+            break;
+        case 7:
+            nbs = t + nx - 1;
+            break;
+        default:
+            nbs = -1;
+            break;
+    }
+
+    if(nbs != -1 && ref[nbs] != 0)
+    {
+        ref[t] = MAX_BRIGHTNESS;
+        *changed = true;
+    }
+}
+
+__global__ void hysteresis_edges_kernel(pixel_t *nms, pixel_t *ref, int nx, int ny,
+                                        int tmin, bool *changed)
 {
     int x = threadIdx.x + blockIdx.x * blockDim.x + 1;
     int y = threadIdx.y + blockIdx.y * blockDim.y + 1;
@@ -439,22 +482,10 @@ __global__ void hysteresis_edges_kernel(pixel_t *nms, pixel_t *ref, int nx, int 
     {
         size_t t = x + nx * y;
 
-        int nbs[8];
-        nbs[0] = t - nx;
-        nbs[1] = t + nx;
-        nbs[2] = t + 1;
-        nbs[3] = t - 1;
-        nbs[4] = nbs[0] + 1;
-        nbs[5] = nbs[0] - 1;
-        nbs[6] = nbs[1] + 1;
-        nbs[7] = nbs[1] - 1;
-
-        if(nms[t] >= tmin && ref[t] == 0) {
-            for(int k = 0; k < 8; k++)
-                if(ref[nbs[k]] != 0) {
-                    ref[t] = MAX_BRIGHTNESS;
-                    *changed = true;
-                }
+        if(nms[t] >= tmin && ref[t] == 0) 
+        {
+            hysteresis_edges_subkernel <<<1, 8>>>(nms, ref, nx, ny, t, changed);
+            cudaThreadSynchronize();
         }
     }
 }
