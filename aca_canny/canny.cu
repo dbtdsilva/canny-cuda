@@ -25,6 +25,7 @@ typedef int pixel_t;
 // Device constants
 __constant__ int const_nx;
 __constant__ int const_ny;
+__constant__ int const_khalf;
 
 // convolution of in image to out image using kernel of kn width
 void convolution(const pixel_t *in, pixel_t *out, const float *kernel,
@@ -281,12 +282,12 @@ __global__  void convolution_kernel(pixel_t *in, float *kernel, pixel_t *out, in
     int x = threadIdx.x + blockIdx.x * blockDim.x + khalf;
     int y = threadIdx.y + blockIdx.y * blockDim.y + khalf;
     
-    if((x < (const_nx - khalf)) && (y < (const_ny - khalf)))
+    if((x < (const_nx - const_khalf)) && (y < (const_ny - const_khalf)))
     {
         float pixel = 0.0;
         size_t c = 0;
-        for(int j = -khalf; j <= khalf; j++) 
-            for(int i = -khalf; i <= khalf; i++)
+        for(int j = -const_khalf; j <= const_khalf; j++) 
+            for(int i = -const_khalf; i <= const_khalf; i++)
                 pixel += in[(y - j) * const_nx + x - i] * kernel[c++];
         out[y * const_nx + x] = (pixel_t) pixel;
     }
@@ -302,6 +303,8 @@ void convolution_device(const pixel_t *in, pixel_t *out, const float *kernel,
     const int khalf = kn / 2;
     const int memSize = nx * ny * sizeof(pixel_t);
     const int kernelSize = kn * kn * sizeof(float);
+
+    cudaMemcpyToSymbol(const_khalf, &khalf, sizeof(int));
 
     pixel_t *devIn;
     pixel_t *devOut;
