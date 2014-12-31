@@ -390,6 +390,46 @@ void non_maximum_supression_device(const pixel_t *after_Gx, const pixel_t * afte
     cudaFree(devNms);
 }
 
+__global__ void first_edges_kernel(pixel_t *nms, pixel_t *ref, int nx, int ny, int tmax)
+{
+    int x = threadIdx.x + blockIdx.x * blockDim.x + 1;
+    int y = threadIdx.y + blockIdx.y * blockDim.y + 1;
+
+    if((x < (nx - 1)) && (y < (ny - 1)))
+    {
+        size_t c = x + nx * y;
+        if(nms[c] >= tmax)
+            ref[c] = MAX_BRIGHTNESS;
+    }
+}
+
+// edges found in first pass for nms > tmax
+void first_edges_device(const pixel_t *nms, pixel_t *reference, 
+                 const int nx, const int ny, const int tmax)
+{
+    const int memSize = nx * ny * sizeof(pixel_t);
+
+    pixel_t *devNms;
+    pixel_t *devReference;
+
+    cudaMalloc((void**) &devNms, memSize);
+    cudaMalloc((void**) &devReference, memSize);
+
+    cudaMemset(devReference, 0, memSize);
+
+    cudaMemcpy(devNms, nms, memSize, cudaMemcpyHostToDevice);
+
+    dim3 gridSize(ceil((nx - 2)/ 16.0), ceil((ny - 2)/ 32.0));              
+    dim3 blockSize(16, 32);             // 512 threads (x - 16, y - 32)
+
+    first_edges_kernel <<<gridSize, blockSize>>> (devNms, devReference, nx, ny, tmax);
+
+    cudaMemcpy(reference, devReference, memSize, cudaMemcpyDeviceToHost);
+
+    cudaFree(devNms);
+    cudaFree(devReference);
+}
+
 // canny edge detector code to run on the GPU
 void cannyDevice( const int *h_idata, const int w, const int h, 
                   const int tmin, const int tmax, 
@@ -440,7 +480,7 @@ void cannyDevice( const int *h_idata, const int w, const int h,
 
     // edges with nms >= tmax
     memset(h_odata, 0, sizeof(pixel_t) * nx * ny);
-    first_edges(nms, h_odata, nx, ny, tmax);
+    first_edges_device(nms, h_odata, nx, ny, tmax);
 
     // edges with nms >= tmin && neighbor is edge
     bool changed;
