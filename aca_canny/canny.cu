@@ -343,7 +343,7 @@ __global__  void non_maximum_supression_kernel(pixel_t *afterGx, pixel_t *afterG
         int sw = ss + 1;
         int se = ss - 1;
 
-        float dir = (float) (fmod(atan2(afterGy[c], afterGx[c]) + M_PI, M_PI) / M_PI) * 8;
+        float dir = (float) (fmod(atan2((double) afterGy[c],(double) afterGx[c]) + M_PI, M_PI) / M_PI) * 8;
 
         if(((dir <= 1 || dir > 7) && G[c] > G[ee] && G[c] > G[ww]) ||
            ((dir > 1 && dir <= 3) && G[c] > G[nw] && G[c] > G[se]) ||
