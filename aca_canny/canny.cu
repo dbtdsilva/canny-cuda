@@ -277,10 +277,10 @@ void cannyHost( const int *h_idata, const int w, const int h,
 
 /* DEVICE OPERATIONS */
 
-__global__  void convolution_kernel(pixel_t *in, float *kernel, pixel_t *out, int khalf) 
+__global__  void convolution_kernel(pixel_t *in, float *kernel, pixel_t *out) 
 {
-    int x = threadIdx.x + blockIdx.x * blockDim.x + khalf;
-    int y = threadIdx.y + blockIdx.y * blockDim.y + khalf;
+    int x = threadIdx.x + blockIdx.x * blockDim.x + const_khalf;
+    int y = threadIdx.y + blockIdx.y * blockDim.y + const_khalf;
     
     if((x < (const_nx - const_khalf)) && (y < (const_ny - const_khalf)))
     {
@@ -322,7 +322,7 @@ void convolution_device(const pixel_t *in, pixel_t *out, const float *kernel,
 	dim3 gridSize(ceil((nx - 2*khalf)/ 16.0), ceil((ny - 2*khalf)/ 32.0));				
 	dim3 blockSize(16, 32);				// 512 threads (x - 16, y - 32)
     
-	convolution_kernel <<<gridSize, blockSize>>> (devIn, devKernel, devOut, khalf);
+	convolution_kernel <<<gridSize, blockSize>>> (devIn, devKernel, devOut);
 	
     cudaMemcpy(out, devOut, memSize, cudaMemcpyDeviceToHost);
 
