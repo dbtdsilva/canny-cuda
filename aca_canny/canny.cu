@@ -276,20 +276,19 @@ void cannyHost( const int *h_idata, const int w, const int h,
 
 /* DEVICE OPERATIONS */
 
-__global__  void convolution_kernel(pixel_t *in, float *kernel, pixel_t *out,
-                    int nx, int ny, int khalf) 
+__global__  void convolution_kernel(pixel_t *in, float *kernel, pixel_t *out, int khalf) 
 {
     int x = threadIdx.x + blockIdx.x * blockDim.x + khalf;
     int y = threadIdx.y + blockIdx.y * blockDim.y + khalf;
     
-    if((x < (nx - khalf)) && (y < (ny - khalf)))
+    if((x < (const_nx - khalf)) && (y < (const_ny - khalf)))
     {
         float pixel = 0.0;
         size_t c = 0;
         for(int j = -khalf; j <= khalf; j++) 
             for(int i = -khalf; i <= khalf; i++)
-                pixel += in[(y - j) * nx + x - i] * kernel[c++];
-        out[y * nx + x] = (pixel_t) pixel;
+                pixel += in[(y - j) * const_nx + x - i] * kernel[c++];
+        out[y * const_nx + x] = (pixel_t) pixel;
     }
 }
 
@@ -320,7 +319,7 @@ void convolution_device(const pixel_t *in, pixel_t *out, const float *kernel,
 	dim3 gridSize(ceil((nx - 2*khalf)/ 16.0), ceil((ny - 2*khalf)/ 32.0));				
 	dim3 blockSize(16, 32);				// 512 threads (x - 16, y - 32)
     
-	convolution_kernel <<<gridSize, blockSize>>> (devIn, devKernel, devOut, nx, ny, khalf);
+	convolution_kernel <<<gridSize, blockSize>>> (devIn, devKernel, devOut, khalf);
 	
     cudaMemcpy(out, devOut, memSize, cudaMemcpyDeviceToHost);
 
@@ -505,8 +504,8 @@ void cannyDevice( const int *h_idata, const int w, const int h,
     const int nx = w;
     const int ny = h;
 
-    cudaMemcpyToSymbol((char*) "const_nx", (void*) &nx, sizeof(int));
-    cudaMemcpyToSymbol((char*) "const_ny", (void*) &ny, sizeof(int));
+    cudaMemcpyToSymbol(const_nx, &nx, sizeof(int));
+    cudaMemcpyToSymbol(const_ny, &ny, sizeof(int));
 
     pixel_t *G        = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
     pixel_t *after_Gx = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
