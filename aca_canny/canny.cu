@@ -332,16 +332,16 @@ void convolution_device(const pixel_t *in, pixel_t *out, const float *kernel,
 }
 
 __global__  void non_maximum_supression_kernel(pixel_t *afterGx, pixel_t *afterGy,
-                            pixel_t *G, pixel_t *Nms, int nx, int ny)
+                            pixel_t *G, pixel_t *Nms)
 {
     int x = threadIdx.x + blockIdx.x * blockDim.x + 1;
     int y = threadIdx.y + blockIdx.y * blockDim.y + 1;
     
-    if((x < (nx - 1)) && (y < (ny - 1)))
+    if((x < (const_nx - 1)) && (y < (const_ny - 1)))
     {
-        int c = x + nx * y;
-        int nn = c - nx;
-        int ss = c + nx;
+        int c = x + const_nx * y;
+        int nn = c - const_nx;
+        int ss = c + const_nx;
         int ww = c + 1;
         int ee = c - 1;
         int nw = nn + 1;
@@ -386,7 +386,7 @@ void non_maximum_supression_device(const pixel_t *after_Gx, const pixel_t * afte
     dim3 gridSize(ceil((nx - 2)/ 16.0), ceil((ny - 2)/ 32.0));              
     dim3 blockSize(16, 32);             // 512 threads (x - 16, y - 32)
     
-    non_maximum_supression_kernel <<<gridSize, blockSize>>> (devAfterGx, devAfterGy, devG, devNms, nx, ny);
+    non_maximum_supression_kernel <<<gridSize, blockSize>>> (devAfterGx, devAfterGy, devG, devNms);
 
     cudaMemcpy(nms, devNms, memSize, cudaMemcpyDeviceToHost);
 
@@ -396,14 +396,14 @@ void non_maximum_supression_device(const pixel_t *after_Gx, const pixel_t * afte
     cudaFree(devNms);
 }
 
-__global__ void first_edges_kernel(pixel_t *nms, pixel_t *ref, int nx, int ny, int tmax)
+__global__ void first_edges_kernel(pixel_t *nms, pixel_t *ref, int tmax)
 {
     int x = threadIdx.x + blockIdx.x * blockDim.x + 1;
     int y = threadIdx.y + blockIdx.y * blockDim.y + 1;
 
-    if((x < (nx - 1)) && (y < (ny - 1)))
+    if((x < (const_nx - 1)) && (y < (const_ny - 1)))
     {
-        size_t c = x + nx * y;
+        size_t c = x + const_nx * y;
         if(nms[c] >= tmax)
             ref[c] = MAX_BRIGHTNESS;
     }
@@ -428,7 +428,7 @@ void first_edges_device(const pixel_t *nms, pixel_t *reference,
     dim3 gridSize(ceil((nx - 2)/ 16.0), ceil((ny - 2)/ 32.0));              
     dim3 blockSize(16, 32);             // 512 threads (x - 16, y - 32)
 
-    first_edges_kernel <<<gridSize, blockSize>>> (devNms, devReference, nx, ny, tmax);
+    first_edges_kernel <<<gridSize, blockSize>>> (devNms, devReference, tmax);
 
     cudaMemcpy(reference, devReference, memSize, cudaMemcpyDeviceToHost);
 
@@ -436,20 +436,20 @@ void first_edges_device(const pixel_t *nms, pixel_t *reference,
     cudaFree(devReference);
 }
 
-__global__ void hysteresis_edges_kernel(pixel_t *nms, pixel_t *ref, int nx, int ny, int tmin, bool *changed)
+__global__ void hysteresis_edges_kernel(pixel_t *nms, pixel_t *ref, int tmin, bool *changed)
 {
     int x = threadIdx.x + blockIdx.x * blockDim.x + 1;
     int y = threadIdx.y + blockIdx.y * blockDim.y + 1;
 
-    if((x < (nx - 1)) && (y < (ny - 1)))
+    if((x < (const_nx - 1)) && (y < (const_ny - 1)))
     {
-        size_t t = x + nx * y;
+        size_t t = x + const_nx * y;
 
         if(nms[t] >= tmin && ref[t] == 0)
         {
             int nbs[8];
-            nbs[0] = t - nx;
-            nbs[1] = t + nx;
+            nbs[0] = t - const_nx;
+            nbs[1] = t + const_nx;
             nbs[2] = t + 1;
             nbs[3] = t - 1;
             nbs[4] = nbs[0] + 1;
@@ -488,7 +488,7 @@ void hysteresis_edges_device(const pixel_t *nms, pixel_t *reference,
     dim3 gridSize(ceil((nx - 2)/ 16.0), ceil((ny - 2)/ 32.0));              
     dim3 blockSize(16, 32);             // 512 threads (x - 16, y - 32)
 
-    hysteresis_edges_kernel <<<gridSize, blockSize>>> (devNms, devReference, nx, ny, tmin, devChanged);
+    hysteresis_edges_kernel <<<gridSize, blockSize>>> (devNms, devReference, tmin, devChanged);
 
     cudaMemcpy(reference, devReference, memSize, cudaMemcpyDeviceToHost);
     cudaMemcpy(pchanged, devChanged, sizeof(bool), cudaMemcpyDeviceToHost);
