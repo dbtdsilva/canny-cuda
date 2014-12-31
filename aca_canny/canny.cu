@@ -22,6 +22,10 @@
 // store negative values.
 typedef int pixel_t;
 
+// Device constants
+__constant__ int const_nx;
+__constant__ int const_ny;
+
 // convolution of in image to out image using kernel of kn width
 void convolution(const pixel_t *in, pixel_t *out, const float *kernel,
                  const int nx, const int ny, const int kn)
@@ -500,7 +504,10 @@ void cannyDevice( const int *h_idata, const int w, const int h,
 {
     const int nx = w;
     const int ny = h;
- 
+
+    cudaMemcpyToSymbol((char*) "const_nx", (void*) &nx, sizeof(int));
+    cudaMemcpyToSymbol((char*) "const_ny", (void*) &ny, sizeof(int));
+
     pixel_t *G        = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
     pixel_t *after_Gx = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
     pixel_t *after_Gy = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
