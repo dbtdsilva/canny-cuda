@@ -358,7 +358,7 @@ __global__ void merging_gradients_kernel(const pixel_t *afterGx, const pixel_t *
     
     if((x < (const_nx - 1)) && (y < (const_ny - 1)))
     {
-        const int c = i + const_nx * j;
+        const int c = x + const_nx * y;
         G[c] = (pixel_t)(hypot((double)(afterGx[c]), (double)( afterGy[c]) ));
     }
 }
@@ -441,7 +441,7 @@ void cannyDevice( const int *h_idata, const int w, const int h,
     merging_gradients_device(dev_after_Gx, dev_after_Gy, dev_G, nx, ny);
  
     // Non-maximum suppression, straightforward implementation.
-    non_maximum_supression_device(after_Gx, after_Gy, dev_G, dev_nms, nx, ny);
+    non_maximum_supression_device(dev_after_Gx, dev_after_Gy, dev_G, dev_nms, nx, ny);
 
     cudaMemcpy(nms, dev_nms, memSize, cudaMemcpyDeviceToHost);
 
