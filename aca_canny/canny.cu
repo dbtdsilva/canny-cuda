@@ -528,7 +528,7 @@ void cannyDevice( const int *h_idata, const int w, const int h,
     bool changed;
     do {
         changed = false;
-        hysteresis_edges(dev_nms, dev_h_odata, nx, ny, tmin, &changed);
+        hysteresis_edges_device(dev_nms, dev_h_odata, nx, ny, tmin, &changed);
     } while (changed==true);
     
     cudaMemcpy(h_odata, dev_h_odata, memSize, cudaMemcpyDeviceToHost);
