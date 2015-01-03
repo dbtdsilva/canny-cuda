@@ -315,7 +315,7 @@ void convolution_device(const pixel_t *in, const pixel_t *out, const float *kern
 	dim3 gridSize(ceil((nx - 2*khalf)/ 16.0), ceil((ny - 2*khalf)/ 32.0));				
 	dim3 blockSize(16, 32);				// 512 threads (x - 16, y - 32)
     
-	convolutionPixel <<<gridSize, blockSize>>> (devIn, devKernel, devOut);
+	convolutionPixel <<<gridSize, blockSize>>> (in, devKernel, out);
 
     cudaFree(devKernel);
 }
