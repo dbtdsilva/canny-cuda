@@ -442,7 +442,7 @@ __global__ void merging_gradients_kernel(const pixel_t *after_Gx, const pixel_t 
 
     if((x < (const_nx - 1)) && (y < (const_ny - 1)))
     {
-        int c = x + nx * y;
+        int c = x + const_nx * y;
         G[c] = (pixel_t)(hypot((double)(after_Gx[c]), (double)(after_Gy[c])));
     }
 }
@@ -533,7 +533,7 @@ void cannyDevice( const int *h_idata, const int w, const int h,
     
     cudaMemcpy(h_odata, dev_h_odata, memSize, cudaMemcpyDeviceToHost);
 
-    cudaFree(dev_h_odata)
+    cudaFree(dev_h_odata);
     cudaFree(dev_after_Gx);
     cudaFree(dev_after_Gy);
     cudaFree(dev_G);
