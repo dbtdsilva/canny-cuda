@@ -395,7 +395,7 @@ void first_edges_device(const pixel_t *nms, pixel_t *reference, const int nx, co
     dim3 gridSize(ceil((nx - 2)/ 16.0), ceil((ny - 2)/ 32.0));              
     dim3 blockSize(16, 32);             // 512 threads (x - 16, y - 32)
 
-    first_edges_kernel <<<gridSize, blockSize>>> (devNms, devReference);
+    first_edges_kernel <<<gridSize, blockSize>>> (nms, reference);
 }
 
 // canny edge detector code to run on the GPU
