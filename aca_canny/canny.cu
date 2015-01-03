@@ -463,9 +463,6 @@ void cannyDevice( const int *h_idata, const int w, const int h,
     cudaFree(dev_nms);
     cudaFree(dev_grad);
 
-    free(after_Gx);
-    free(after_Gy);
-    free(G);
     free(nms);
 }
 
