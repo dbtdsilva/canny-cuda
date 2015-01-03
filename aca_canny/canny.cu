@@ -278,7 +278,7 @@ void cannyHost( const int *h_idata, const int w, const int h,
 
 /* DEVICE OPERATIONS */
 
-__global__  void convolutionPixel(const pixel_t *in, const float *kernel, pixel_t *out) 
+__global__  void convolution_kernel(const pixel_t *in, const float *kernel, pixel_t *out) 
 {
     int x = threadIdx.x + blockIdx.x * blockDim.x + const_khalf;
     int y = threadIdx.y + blockIdx.y * blockDim.y + const_khalf;
@@ -308,7 +308,7 @@ void convolution_device(const pixel_t *in, pixel_t *out, const float *kernel,
     dim3 gridSize(ceil((nx - 2*khalf)/ 16.0), ceil((ny - 2*khalf)/ 32.0));              
     dim3 blockSize(16, 32);             // 512 threads (x - 16, y - 32)
     
-    convolutionPixel <<<gridSize, blockSize>>> (in, kernel, out);
+    convolution_kernel <<<gridSize, blockSize>>> (in, kernel, out);
 }
 
 __global__  void non_maximum_supression_kernel(const pixel_t *afterGx, const pixel_t *afterGy,
@@ -483,9 +483,13 @@ void cannyDevice( const int *h_idata, const int w, const int h,
         hysteresis_edges(nms, h_odata, nx, ny, tmin, &changed);
     } while (changed==true);
  
-    free(after_Gx);
-    free(after_Gy);
-    free(G);
+    cudaFree(dev_h_odata);
+    cudaFree(dev_G);
+    cudaFree(dev_after_Gx);
+    cudaFree(dev_after_Gy);
+    cudaFree(dev_nms);
+    cudaFree(dev_grad);
+
     free(nms);
 }
 
