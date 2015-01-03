@@ -22,12 +22,10 @@
 // store negative values.
 typedef int pixel_t;
 
-// Device constants
+// Device constant
 __constant__ int const_nx;
 __constant__ int const_ny;
 __constant__ int const_khalf;
-__constant__ int const_tmin;
-__constant__ int const_tmax;
 
 // convolution of in image to out image using kernel of kn width
 void convolution(const pixel_t *in, pixel_t *out, const float *kernel,
@@ -220,7 +218,7 @@ void cannyHost( const int *h_idata, const int w, const int h,
 {
     const int nx = w;
     const int ny = h;
- 
+
     pixel_t *G        = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
     pixel_t *after_Gx = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
     pixel_t *after_Gy = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
@@ -279,7 +277,7 @@ void cannyHost( const int *h_idata, const int w, const int h,
 
 /* DEVICE OPERATIONS */
 
-__global__  void convolution_kernel(const pixel_t *in, const float *kernel, pixel_t *out) 
+__global__  void convolutionPixel(const pixel_t *in, const float *kernel, pixel_t *out) 
 {
     int x = threadIdx.x + blockIdx.x * blockDim.x + const_khalf;
     int y = threadIdx.y + blockIdx.y * blockDim.y + const_khalf;
@@ -296,16 +294,17 @@ __global__  void convolution_kernel(const pixel_t *in, const float *kernel, pixe
 }
 
 // convolution of in image to out image using kernel of kn width
-void convolution_device(const pixel_t *in, pixel_t *out, const float *kernel,
+void convolution_device(const pixel_t *in, const pixel_t *out, const float *kernel,
                  const int nx, const int ny, const int kn)
 {
     assert(kn % 2 == 1);
     assert(nx > kn && ny > kn);
     
     const int khalf = kn / 2;
-    const int kernelSize = kn * kn * sizeof(float);
-
+    
     cudaMemcpyToSymbol(const_khalf, &khalf, sizeof(int));
+
+    int kernelSize = kn * kn * sizeof(float);
 
     float *devKernel;
 
@@ -316,145 +315,11 @@ void convolution_device(const pixel_t *in, pixel_t *out, const float *kernel,
 	dim3 gridSize(ceil((nx - 2*khalf)/ 16.0), ceil((ny - 2*khalf)/ 32.0));				
 	dim3 blockSize(16, 32);				// 512 threads (x - 16, y - 32)
     
-	convolution_kernel <<<gridSize, blockSize>>> (in, devKernel, out);
-	
+	convolutionPixel <<<gridSize, blockSize>>> (devIn, devKernel, devOut);
+
     cudaFree(devKernel);
 }
 
-__global__  void non_maximum_supression_kernel(const pixel_t *afterGx, const pixel_t *afterGy,
-                            const pixel_t *G, pixel_t *nms)
-{
-    int x = threadIdx.x + blockIdx.x * blockDim.x + 1;
-    int y = threadIdx.y + blockIdx.y * blockDim.y + 1;
-    
-    if((x < (const_nx - 1)) && (y < (const_ny - 1)))
-    {
-        int c = x + const_nx * y;
-        int nn = c - const_nx;
-        int ss = c + const_nx;
-        int ww = c + 1;
-        int ee = c - 1;
-        int nw = nn + 1;
-        int ne = nn - 1;
-        int sw = ss + 1;
-        int se = ss - 1;
-
-        float dir = (float) (fmod(atan2((double) afterGy[c],(double) afterGx[c]) + M_PI, M_PI) / M_PI) * 8;
-
-        if(((dir <= 1 || dir > 7) && G[c] > G[ee] && G[c] > G[ww]) ||
-           ((dir > 1 && dir <= 3) && G[c] > G[nw] && G[c] > G[se]) ||
-           ((dir > 3 && dir <= 5) && G[c] > G[nn] && G[c] > G[ss]) ||
-           ((dir > 5 && dir <= 7) && G[c] > G[ne] && G[c] > G[sw]))
-            nms[c] = G[c];
-        else
-            nms[c] = 0;
-    }
-}
-
-// Canny non-maximum suppression
-void non_maximum_supression_device(const pixel_t *after_Gx, const pixel_t * after_Gy,
-                    const pixel_t *G, pixel_t *nms, const int nx, const int ny)
-{
-    dim3 gridSize(ceil((nx - 2)/ 16.0), ceil((ny - 2)/ 32.0));              
-    dim3 blockSize(16, 32);             // 512 threads (x - 16, y - 32)
-    
-    non_maximum_supression_kernel <<<gridSize, blockSize>>> (after_Gx, after_Gy, G, nms);
-}
-
-__global__ void first_edges_kernel(const pixel_t *nms, pixel_t *ref)
-{
-    int x = threadIdx.x + blockIdx.x * blockDim.x + 1;
-    int y = threadIdx.y + blockIdx.y * blockDim.y + 1;
-
-    if((x < (const_nx - 1)) && (y < (const_ny - 1)))
-    {
-        size_t c = x + const_nx * y;
-        if(nms[c] >= const_tmax)
-            ref[c] = MAX_BRIGHTNESS;
-    }
-}
-
-// edges found in first pass for nms > tmax
-void first_edges_device(const pixel_t *nms, pixel_t *reference, const int nx, const int ny)
-{
-    dim3 gridSize(ceil((nx - 2)/ 16.0), ceil((ny - 2)/ 32.0));              
-    dim3 blockSize(16, 32);             // 512 threads (x - 16, y - 32)
-
-    first_edges_kernel <<<gridSize, blockSize>>> (nms, reference);
-}
-
-__global__ void hysteresis_edges_kernel(const pixel_t *nms, pixel_t *ref, bool *changed)
-{
-    int x = threadIdx.x + blockIdx.x * blockDim.x + 1;
-    int y = threadIdx.y + blockIdx.y * blockDim.y + 1;
-
-    if((x < (const_nx - 1)) && (y < (const_ny - 1)))
-    {
-        size_t t = x + const_nx * y;
-
-        if(nms[t] >= const_tmin && ref[t] == 0)
-        {
-            int nbs[8];
-            nbs[0] = t - const_nx;
-            nbs[1] = t + const_nx;
-            nbs[2] = t + 1;
-            nbs[3] = t - 1;
-            nbs[4] = nbs[0] + 1;
-            nbs[5] = nbs[0] - 1;
-            nbs[6] = nbs[1] + 1;
-            nbs[7] = nbs[1] - 1;
-
-            for(int k = 0; k < 8; k++)
-                if(ref[nbs[k]] != 0)
-                {
-                    ref[t] = MAX_BRIGHTNESS;
-                    *changed = true;
-                }
-        }
-    }
-}
-
-// edges found in after first passes for nms > tmin && neighbor is edge
-void hysteresis_edges_device(const pixel_t *nms, pixel_t *reference, const int nx,
-                            const int ny, bool *pchanged)
-{
-    bool *devChanged;
-
-    cudaMalloc((void**) &devChanged, sizeof(bool));
-
-    cudaMemcpy(devChanged, pchanged, sizeof(bool), cudaMemcpyHostToDevice);
-
-    dim3 gridSize(ceil((nx - 2)/ 16.0), ceil((ny - 2)/ 32.0));              
-    dim3 blockSize(16, 32);             // 512 threads (x - 16, y - 32)
-
-    hysteresis_edges_kernel <<<gridSize, blockSize>>> (nms, reference, devChanged);
-
-    cudaMemcpy(pchanged, devChanged, sizeof(bool), cudaMemcpyDeviceToHost);
-
-    cudaFree(devChanged);
-}
-
-__global__ void merging_gradients_kernel(const pixel_t *after_Gx, const pixel_t *after_Gy,
-                                        pixel_t *G )
-{
-    int x = threadIdx.x + blockIdx.x * blockDim.x + 1;
-    int y = threadIdx.y + blockIdx.y * blockDim.y + 1;
-
-    if((x < (const_nx - 1)) && (y < (const_ny - 1)))
-    {
-        int c = x + const_nx * y;
-        G[c] = (pixel_t)(hypot((double)(after_Gx[c]), (double)(after_Gy[c])));
-    }
-}
-
-void merging_gradients_device(const pixel_t *after_Gx, const pixel_t *after_Gy, pixel_t *G,
-                            const int nx, const int ny)
-{
-    dim3 gridSize(ceil((nx - 2)/ 16.0), ceil((ny - 2)/ 32.0));              
-    dim3 blockSize(16, 32);             // 512 threads (x - 16, y - 32)
-
-    merging_gradients_kernel <<<gridSize, blockSize>>> (after_Gx, after_Gy, G);
-}
 
 // canny edge detector code to run on the GPU
 void cannyDevice( const int *h_idata, const int w, const int h, 
@@ -468,30 +333,33 @@ void cannyDevice( const int *h_idata, const int w, const int h,
 
     cudaMemcpyToSymbol(const_nx, &nx, sizeof(int));
     cudaMemcpyToSymbol(const_ny, &ny, sizeof(int));
-    cudaMemcpyToSymbol(const_tmin, &tmin, sizeof(int));
-    cudaMemcpyToSymbol(const_tmax, &tmax, sizeof(int));
 
     pixel_t *dev_h_odata;
-    pixel_t *dev_G;
     pixel_t *dev_after_Gx;
     pixel_t *dev_after_Gy;
-    pixel_t *dev_nms;
+    pixel_t *G        = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
+    pixel_t *after_Gx = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
+    pixel_t *after_Gy = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
+    pixel_t *nms      = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
     
     cudaMalloc((void**) &dev_h_odata, memSize);
-    cudaMalloc((void**) &dev_G, memSize);
     cudaMalloc((void**) &dev_after_Gx, memSize);
-    cudaMalloc((void**) &dev_after_Gy, memSize);
-    cudaMalloc((void**) &dev_nms, memSize);
+    cudaMalloc((void**) &dev_after_Gx, memSize);
 
     cudaMemset(dev_h_odata, 0, memSize);
-    cudaMemset(dev_G, 0, memSize);
     cudaMemset(dev_after_Gx, 0, memSize);
     cudaMemset(dev_after_Gy, 0, memSize);
-    cudaMemset(dev_nms, 0, memSize);
 
+    if (G == NULL || after_Gx == NULL || after_Gy == NULL ||
+        nms == NULL || h_odata == NULL) {
+        fprintf(stderr, "canny_edge_detection:"
+                " Failed memory allocation(s).\n");
+        exit(1);
+    }
+ 
     // Gaussian filter using convolution_device
     gaussian_filter(h_idata, h_odata, nx, ny, sigma);
-    
+
     cudaMemcpy(dev_h_odata, h_odata, memSize, cudaMemcpyHostToDevice);
 
     const float Gx[] = {-1, 0, 1,
@@ -506,38 +374,40 @@ void cannyDevice( const int *h_idata, const int w, const int h,
                         -1,-2,-1};
  
     // Gradient along y
-    convolution_device(h_odata, dev_after_Gy, Gy, nx, ny, 3);
+    convolution_device(dev_h_odata, dev_after_Gy, Gy, nx, ny, 3);
     
-    merging_gradients_device(dev_after_Gx, dev_after_Gy, dev_G, nx, ny);
-    
-    /*// Merging gradients
+    cudaMemcpy(after_Gx, dev_after_Gx, memSize, cudaMemcpyDeviceToHost);
+    cudaMemcpy(after_Gy, dev_after_Gy, memSize, cudaMemcpyDeviceToHost);
+
+    // Merging gradients
     for (int i = 1; i < nx - 1; i++)
         for (int j = 1; j < ny - 1; j++) {
             const int c = i + nx * j;
             G[c] = (pixel_t)(hypot((double)(after_Gx[c]), (double)( after_Gy[c]) ));
-        }*/
+        }
  
     // Non-maximum suppression, straightforward implementation.
-    non_maximum_supression_device(dev_after_Gx, dev_after_Gy, dev_G, dev_nms, nx, ny);
+    non_maximum_supression(after_Gx, after_Gy, G, nms, nx, ny);
 
     // edges with nms >= tmax
-    cudaMemset(dev_h_odata, 0, memSize);
-    first_edges_device(dev_nms, dev_h_odata, nx, ny);
+    memset(h_odata, 0, sizeof(pixel_t) * nx * ny);
+    first_edges(nms, h_odata, nx, ny, tmax);
 
     // edges with nms >= tmin && neighbor is edge
     bool changed;
     do {
         changed = false;
-        hysteresis_edges_device(dev_nms, dev_h_odata, nx, ny, &changed);
+        hysteresis_edges(nms, h_odata, nx, ny, tmin, &changed);
     } while (changed==true);
     
-    cudaMemcpy(h_odata, dev_h_odata, memSize, cudaMemcpyDeviceToHost);
-
     cudaFree(dev_h_odata);
     cudaFree(dev_after_Gx);
     cudaFree(dev_after_Gy);
-    cudaFree(dev_G);
-    cudaFree(dev_nms);
+
+    free(after_Gx);
+    free(after_Gy);
+    free(G);
+    free(nms);
 }
 
 // print command line format
