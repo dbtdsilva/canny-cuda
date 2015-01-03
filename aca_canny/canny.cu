@@ -330,10 +330,10 @@ void cannyDevice( const int *h_idata, const int w, const int h,
     pixel_t *after_Gy = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
     pixel_t *nms      = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
     
+    // cuda pointers
     pixel_t *dev_h_odata;
     pixel_t *dev_after_Gx;
     pixel_t *dev_after_Gy;
-
     float *dev_grad;
 
     cudaMalloc((void**) &dev_h_odata, memSize);
