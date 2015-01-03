@@ -444,7 +444,7 @@ void hysteresis_edges_device(const pixel_t *nms, pixel_t *reference, const int n
     dim3 gridSize(ceil((nx - 2)/ 16.0), ceil((ny - 2)/ 32.0));              
     dim3 blockSize(16, 32);             // 512 threads (x - 16, y - 32)
 
-    hysteresis_edges_kernel <<<gridSize, blockSize>>> (devNms, devReference, devChanged);
+    hysteresis_edges_kernel <<<gridSize, blockSize>>> (nms, reference, devChanged);
 
     cudaMemcpy(pchanged, devChanged, sizeof(bool), cudaMemcpyDeviceToHost);
 
