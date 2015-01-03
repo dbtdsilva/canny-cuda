@@ -304,20 +304,10 @@ void convolution_device(const pixel_t *in, pixel_t *out, const float *kernel,
     
     cudaMemcpyToSymbol(const_khalf, &khalf, sizeof(int));
 
-    int kernelSize = kn * kn * sizeof(float);
-
-    float *devKernel;
-
-    cudaMalloc((void**) &devKernel, kernelSize);
-
-    cudaMemcpy(devKernel, kernel, kernelSize, cudaMemcpyHostToDevice);
-
 	dim3 gridSize(ceil((nx - 2*khalf)/ 16.0), ceil((ny - 2*khalf)/ 32.0));				
 	dim3 blockSize(16, 32);				// 512 threads (x - 16, y - 32)
     
-	convolutionPixel <<<gridSize, blockSize>>> (in, devKernel, out);
-
-    cudaFree(devKernel);
+	convolutionPixel <<<gridSize, blockSize>>> (in, kernel, out);
 }
 
 
@@ -330,21 +320,26 @@ void cannyDevice( const int *h_idata, const int w, const int h,
     const int nx = w;
     const int ny = h;
     const int memSize = nx * ny * sizeof(pixel_t);
+    const int gradSize = 3 * 3 * sizeof(float);
 
     cudaMemcpyToSymbol(const_nx, &nx, sizeof(int));
     cudaMemcpyToSymbol(const_ny, &ny, sizeof(int));
-
-    pixel_t *dev_h_odata;
-    pixel_t *dev_after_Gx;
-    pixel_t *dev_after_Gy;
+    
     pixel_t *G        = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
     pixel_t *after_Gx = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
     pixel_t *after_Gy = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
     pixel_t *nms      = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
     
+    pixel_t *dev_h_odata;
+    pixel_t *dev_after_Gx;
+    pixel_t *dev_after_Gy;
+
+    float *dev_grad;
+
     cudaMalloc((void**) &dev_h_odata, memSize);
     cudaMalloc((void**) &dev_after_Gx, memSize);
-    cudaMalloc((void**) &dev_after_Gx, memSize);
+    cudaMalloc((void**) &dev_after_Gy, memSize);
+    cudaMalloc((void**) &dev_grad, gradSize);
 
     cudaMemset(dev_h_odata, 0, memSize);
     cudaMemset(dev_after_Gx, 0, memSize);
@@ -365,16 +360,20 @@ void cannyDevice( const int *h_idata, const int w, const int h,
     const float Gx[] = {-1, 0, 1,
                         -2, 0, 2,
                         -1, 0, 1};
- 
+    
+    cudaMemcpy(dev_grad, Gx, gradSize, cudaMemcpyHostToDevice);
+
     // Gradient along x
-    convolution_device(dev_h_odata, dev_after_Gx, Gx, nx, ny, 3);
+    convolution_device(dev_h_odata, dev_after_Gx, dev_grad, nx, ny, 3);
  
     const float Gy[] = { 1, 2, 1,
                          0, 0, 0,
                         -1,-2,-1};
- 
+    
+    cudaMemcpy(dev_grad, Gy, gradSize, cudaMemcpyHostToDevice);
+
     // Gradient along y
-    convolution_device(dev_h_odata, dev_after_Gy, Gy, nx, ny, 3);
+    convolution_device(dev_h_odata, dev_after_Gy, dev_grad, nx, ny, 3);
     
     cudaMemcpy(after_Gx, dev_after_Gx, memSize, cudaMemcpyDeviceToHost);
     cudaMemcpy(after_Gy, dev_after_Gy, memSize, cudaMemcpyDeviceToHost);
@@ -403,6 +402,7 @@ void cannyDevice( const int *h_idata, const int w, const int h,
     cudaFree(dev_h_odata);
     cudaFree(dev_after_Gx);
     cudaFree(dev_after_Gy);
+    cudaFree(dev_grad);
 
     free(after_Gx);
     free(after_Gy);
