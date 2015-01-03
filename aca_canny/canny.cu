@@ -294,7 +294,7 @@ __global__  void convolutionPixel(const pixel_t *in, const float *kernel, pixel_
 }
 
 // convolution of in image to out image using kernel of kn width
-void convolution_device(const pixel_t *in, const pixel_t *out, const float *kernel,
+void convolution_device(const pixel_t *in, pixel_t *out, const float *kernel,
                  const int nx, const int ny, const int kn)
 {
     assert(kn % 2 == 1);
