@@ -23,11 +23,11 @@
 typedef int pixel_t;
 
 // Device constant
-__constant__ int const_nx;
-__constant__ int const_ny;
-__constant__ int const_khalf;
-__constant__ int const_tmax;
-__constant__ int const_tmin;
+__constant__ __device__ int const_nx;
+__constant__ __device__ int const_ny;
+__constant__ __device__ int const_khalf;
+__constant__ __device__ int const_tmax;
+__constant__ __device__ int const_tmin;
 
 // convolution of in image to out image using kernel of kn width
 void convolution(const pixel_t *in, pixel_t *out, const float *kernel,
