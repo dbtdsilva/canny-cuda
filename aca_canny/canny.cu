@@ -23,11 +23,11 @@
 typedef int pixel_t;
 
 // Device constant
-__constant__ __device__ int const_nx;
-__constant__ __device__ int const_ny;
-__constant__ __device__ int const_khalf;
-__constant__ __device__ int const_tmax;
-__constant__ __device__ int const_tmin;
+__constant__ int const_nx;
+__constant__ int const_ny;
+__constant__ int const_khalf;
+__constant__ int const_tmax;
+__constant__ int const_tmin;
 
 // convolution of in image to out image using kernel of kn width
 void convolution(const pixel_t *in, pixel_t *out, const float *kernel,
@@ -420,6 +420,7 @@ __global__ void hysteresis_edges_kernel(const pixel_t *nms, pixel_t *ref, bool *
             nbs[6] = nbs[1] + 1;
             nbs[7] = nbs[1] - 1;
             
+            #pragma unroll
             for(int k = 0; k < 8; k++)
                 if(ref[nbs[k]] != 0) {
                     ref[t] = MAX_BRIGHTNESS;
