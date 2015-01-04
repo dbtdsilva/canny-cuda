@@ -432,22 +432,27 @@ __global__ void hysteresis_edges_kernel(const pixel_t *nms, pixel_t *ref, bool *
 
 // edges found in after first passes for nms > tmin && neighbor is edge
 void hysteresis_edges_device(const pixel_t *nms, pixel_t *reference, const int nx,
-                            const int ny, const int tmin, bool *pchanged)
+                            const int ny, const int tmin)
 {
     cudaMemcpyToSymbol(const_tmin, &tmin, sizeof(int));
-
-    bool *devChanged;
-
-    cudaMalloc((void**) &devChanged, sizeof(bool));
-
-    cudaMemcpy(devChanged, pchanged, sizeof(bool), cudaMemcpyHostToDevice);
 
     dim3 gridSize(ceil((nx - 2)/ 16.0), ceil((ny - 2)/ 32.0));              
     dim3 blockSize(16, 32);             // 512 threads (x - 16, y - 32)
 
-    hysteresis_edges_kernel <<<gridSize, blockSize>>> (nms, reference, devChanged);
+    bool changed;
+    bool *devChanged;
 
-    cudaMemcpy(pchanged, devChanged, sizeof(bool), cudaMemcpyDeviceToHost);
+    cudaMalloc((void**) &devChanged, sizeof(bool));
+
+    do{
+        changed = false;
+
+        cudaMemcpy(devChanged, &changed, sizeof(bool), cudaMemcpyHostToDevice);
+
+        hysteresis_edges_kernel <<<gridSize, blockSize>>> (nms, reference, devChanged);
+
+        cudaMemcpy(&changed, devChanged, sizeof(bool), cudaMemcpyDeviceToHost);
+    } while(changed);
 
     cudaFree(devChanged);
 }
@@ -526,11 +531,7 @@ void cannyDevice( const int *h_idata, const int w, const int h,
     first_edges_device(dev_nms, dev_h_odata, nx, ny, tmax);
 
     // edges with nms >= tmin && neighbor is edge
-    bool changed;
-    do {
-        changed = false;
-        hysteresis_edges_device(dev_nms, dev_h_odata, nx, ny, tmin, &changed);
-    } while (changed==true);
+    hysteresis_edges_device(dev_nms, dev_h_odata, nx, ny, tmin);
     
     cudaMemcpy(h_odata, dev_h_odata, memSize, cudaMemcpyDeviceToHost);
 
