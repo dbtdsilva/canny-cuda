@@ -279,7 +279,7 @@ void cannyHost( const int *h_idata, const int w, const int h,
 __device__ pixel_t* getSubPixelMatrix(const pixel_t *in, const int x, const int y)
 {
     pixel_t subMatrix[9];
-    ĩnt counter = 0;
+    int counter = 0;
 
     for(int j = -const_khalf; j <= const_khalf; j++)
         for(int i = -const_khalf; i <= const_khalf; i++)
