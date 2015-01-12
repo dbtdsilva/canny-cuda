@@ -295,7 +295,9 @@ __global__  void convolution_kernel(const pixel_t *in, const float *kernel, pixe
 
     if((x < (const_nx - const_khalf)) && (y < (const_ny - const_khalf)))
     {
-        __shared__ pixel_t subMatrix[(blockDim.x + 2*const_khalf) * (blockDim.y + 2*const_khalf)];
+        int size = (blockDim.x + 2*const_khalf)*(blockDim.y + 2*const_khalf);
+
+        __shared__ pixel_t subMatrix[size];
 
         int sub_x = threadIdx.x + const_khalf;
         int sub_y = threadIdx.y + const_khalf;
