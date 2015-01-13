@@ -26,6 +26,8 @@ typedef int pixel_t;
 __constant__ int const_nx;
 __constant__ int const_ny;
 __constant__ int const_khalf;
+__constant__ int const_tmax;
+__constant__ int const_tmin;
 
 // convolution of in image to out image using kernel of kn width
 void convolution(const pixel_t *in, pixel_t *out, const float *kernel,
@@ -439,6 +441,89 @@ void merging_gradients_device(const pixel_t *after_Gx, const pixel_t *after_Gy, 
     merging_gradients_kernel <<<gridSize, blockSize>>> (after_Gx, after_Gy, G);
 }
 
+__global__ void first_edges_kernel(const pixel_t *nms, pixel_t *ref)
+{
+    int x = threadIdx.x + blockIdx.x * blockDim.x + 1;
+    int y = threadIdx.y + blockIdx.y * blockDim.y + 1;
+
+    if((x < (const_nx - 1)) && (y < (const_ny - 1)))
+    {
+        size_t c = x + const_nx * y;
+        if(nms[c] >= const_tmax)
+            ref[c] = MAX_BRIGHTNESS;
+    }
+}
+
+// edges found in first pass for nms > tmax
+void first_edges_device(const pixel_t *nms, pixel_t *reference, const int nx, const int ny,
+                        const int tmax)
+{
+    cudaMemcpyToSymbol(const_tmax, &tmax, sizeof(int));
+
+    dim3 gridSize(ceil((nx - 2)/ 16.0), ceil((ny - 2)/ 32.0));              
+    dim3 blockSize(16, 32);             // 512 threads (x - 16, y - 32)
+
+    first_edges_kernel <<<gridSize, blockSize>>> (nms, reference);
+}
+
+__global__ void hysteresis_edges_kernel(const pixel_t *nms, pixel_t *ref, bool *changed)
+{
+    int x = threadIdx.x + blockIdx.x * blockDim.x + 1;
+    int y = threadIdx.y + blockIdx.y * blockDim.y + 1;
+
+    if((x < (const_nx - 1)) && (y < (const_ny - 1)))
+    {
+        size_t t = x + const_nx * y;
+
+        if(nms[t] >= const_tmin && ref[t] == 0)
+        {
+            int nbs[8];
+            nbs[0] = t - const_nx;
+            nbs[1] = t + const_nx;
+            nbs[2] = t + 1;
+            nbs[3] = t - 1;
+            nbs[4] = nbs[0] + 1;
+            nbs[5] = nbs[0] - 1;
+            nbs[6] = nbs[1] + 1;
+            nbs[7] = nbs[1] - 1;
+            
+            #pragma unroll
+            for(int k = 0; k < 8; k++)
+                if(ref[nbs[k]] != 0) {
+                    ref[t] = MAX_BRIGHTNESS;
+                    *changed = true;
+                }
+        }
+    }
+}
+
+// edges found in after first passes for nms > tmin && neighbor is edge
+void hysteresis_edges_device(const pixel_t *nms, pixel_t *reference, const int nx,
+                            const int ny, const int tmin)
+{
+    cudaMemcpyToSymbol(const_tmin, &tmin, sizeof(int));
+
+    dim3 gridSize(ceil((nx - 2)/ 16.0), ceil((ny - 2)/ 32.0));              
+    dim3 blockSize(16, 32);             // 512 threads (x - 16, y - 32)
+
+    bool changed;
+    bool *devChanged;
+
+    cudaMalloc((void**) &devChanged, sizeof(bool));
+
+    do{
+        changed = false;
+
+        cudaMemcpy(devChanged, &changed, sizeof(bool), cudaMemcpyHostToDevice);
+
+        hysteresis_edges_kernel <<<gridSize, blockSize>>> (nms, reference, devChanged);
+
+        cudaMemcpy(&changed, devChanged, sizeof(bool), cudaMemcpyDeviceToHost);
+    } while(changed);
+
+    cudaFree(devChanged);
+}
+
 // canny edge detector code to run on the GPU
 void cannyDevice( const int *h_idata, const int w, const int h, 
                   const int tmin, const int tmax, 
@@ -452,9 +537,7 @@ void cannyDevice( const int *h_idata, const int w, const int h,
 
     cudaMemcpyToSymbol(const_nx, &nx, sizeof(int));
     cudaMemcpyToSymbol(const_ny, &ny, sizeof(int));
- 
-    pixel_t *nms      = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
-
+    
     // cuda pointers
     pixel_t *dev_h_odata;
     pixel_t *dev_G;
@@ -476,7 +559,7 @@ void cannyDevice( const int *h_idata, const int w, const int h,
     cudaMemset(dev_after_Gy, 0, memSize);
     cudaMemset(dev_nms, 0, memSize);
 
-    if (nms == NULL || h_odata == NULL) {
+    if (h_odata == NULL) {
         fprintf(stderr, "canny_edge_detection:"
                 " Failed memory allocation(s).\n");
         exit(1);
@@ -510,18 +593,14 @@ void cannyDevice( const int *h_idata, const int w, const int h,
     // Non-maximum suppression, straightforward implementation.
     non_maximum_supression_device(dev_after_Gx, dev_after_Gy, dev_G, dev_nms, nx, ny);
 
-    cudaMemcpy(nms, dev_nms, memSize, cudaMemcpyDeviceToHost);
-
     // edges with nms >= tmax
-    memset(h_odata, 0, sizeof(pixel_t) * nx * ny);
-    first_edges(nms, h_odata, nx, ny, tmax);
+    cudaMemset(dev_h_odata, 0, memSize);
+    first_edges_device(dev_nms, dev_h_odata, nx, ny, tmax);
 
     // edges with nms >= tmin && neighbor is edge
-    bool changed;
-    do {
-        changed = false;
-        hysteresis_edges(nms, h_odata, nx, ny, tmin, &changed);
-    } while (changed==true);
+    hysteresis_edges_device(dev_nms, dev_h_odata, nx, ny, tmin);
+    
+    cudaMemcpy(h_odata, dev_h_odata, memSize, cudaMemcpyDeviceToHost);
 
     cudaFree(dev_h_odata);
     cudaFree(dev_G);
@@ -529,8 +608,6 @@ void cannyDevice( const int *h_idata, const int w, const int h,
     cudaFree(dev_after_Gy);
     cudaFree(dev_nms);
     cudaFree(dev_grad);
-
-    free(nms);
 }
 
 // print command line format
@@ -641,7 +718,7 @@ int main( int argc, char** argv)
     // allocate mem for the result on host side
     //int* h_odata = (int*) malloc( h*w*sizeof(unsigned int));
     //int* reference = (int*) malloc( h*w*sizeof(unsigned int));
-    
+ 	
     int* h_odata = (int*) calloc(h*w, sizeof(unsigned int));
     int* reference = (int*) calloc(h*w, sizeof(unsigned int));
 
