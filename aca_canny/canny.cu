@@ -362,27 +362,6 @@ __global__  void non_maximum_supression_kernel(const pixel_t *afterGx, const pix
         int sub_x = threadIdx.x + 1;
         int sub_y = threadIdx.y + 1;
 
-        if(sub_x == 1 && sub_y == 1)
-            subMatrix[(sub_y-1)*width + sub_x-1] = G[(y-1)*const_nx + x-1];
-        else if(sub_x == 1 && (vLimit || sub_y == height-2))
-            subMatrix[(sub_y+1)*width + sub_x-1] = G[(y+1)*const_nx + x-1];
-        else if((hLimit || sub_x == width-2) && sub_y == 1)
-            subMatrix[(sub_y-1)*width + sub_x+1] = G[(y-1)*const_nx + x+1];
-        else if((hLimit || sub_x == width-2) && (vLimit || sub_y == height-2))
-            subMatrix[(sub_y+1)*width + sub_x+1] = G[(y+1)*const_nx + x+1];
-
-        if(sub_x == 1)
-            subMatrix[sub_y*width + sub_x-1] = G[y*const_nx + x-1];
-        else if(hLimit || sub_x == width-2)
-            subMatrix[sub_y*width + sub_x+1] = G[y*const_nx + x+1];
-
-        if(sub_y == 1)
-            subMatrix[(sub_y-1)*width + sub_x] = G[(y-1)*const_nx + x];
-        else if(vLimit || sub_y == height-2)
-            subMatrix[(sub_y+1)*width + sub_x] = G[(y+1)*const_nx + x];
-
-        subMatrix[sub_y*width + sub_x] = G[y*const_nx + x];
-
         int c = y*const_nx + x;
         int sub_c = sub_x + width*sub_y;
         int nn = sub_c - width;
@@ -393,6 +372,27 @@ __global__  void non_maximum_supression_kernel(const pixel_t *afterGx, const pix
         int ne = nn - 1;
         int sw = ss + 1;
         int se = ss - 1;
+
+        if(sub_x == 1 && sub_y == 1)
+            subMatrix[nw] = G[(y-1)*const_nx + x-1];
+        else if(sub_x == 1 && (vLimit || sub_y == height-2))
+            subMatrix[sw] = G[(y+1)*const_nx + x-1];
+        else if((hLimit || sub_x == width-2) && sub_y == 1)
+            subMatrix[ne] = G[(y-1)*const_nx + x+1];
+        else if((hLimit || sub_x == width-2) && (vLimit || sub_y == height-2))
+            subMatrix[se] = G[(y+1)*const_nx + x+1];
+
+        if(sub_x == 1)
+            subMatrix[ww] = G[c-1];
+        else if(hLimit || sub_x == width-2)
+            subMatrix[ee] = G[c+1];
+
+        if(sub_y == 1)
+            subMatrix[nn] = G[(y-1)*const_nx + x];
+        else if(vLimit || sub_y == height-2)
+            subMatrix[ss] = G[(y+1)*const_nx + x];
+
+        subMatrix[sub_c] = G[c];
 
         __syncthreads();
 
