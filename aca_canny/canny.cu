@@ -283,8 +283,8 @@ __global__  void convolution_kernel(const pixel_t *in, const float *kernel, pixe
 
     if((x < (const_nx - const_khalf)) && (y < (const_ny - const_khalf)))
     {
-        const int width = blockDim.x + 2;
-        const int height = blockDim.y + 2;
+        const int width = 18;
+        const int height = 34;
         const int size = width * height;
 
         __shared__ pixel_t subMatrix[size];
