@@ -26,6 +26,7 @@ typedef int pixel_t;
 __constant__ int const_nx;
 __constant__ int const_ny;
 __constant__ int const_khalf;
+__constant__ int const_tmax;
 
 // convolution of in image to out image using kernel of kn width
 void convolution(const pixel_t *in, pixel_t *out, const float *kernel,
@@ -281,48 +282,15 @@ __global__  void convolution_kernel(const pixel_t *in, const float *kernel, pixe
 {
     int x = threadIdx.x + blockIdx.x * blockDim.x + const_khalf;
     int y = threadIdx.y + blockIdx.y * blockDim.y + const_khalf;
-
+    
     if((x < (const_nx - const_khalf)) && (y < (const_ny - const_khalf)))
     {
-        const int width = 18;
-        const int height = 34;
-        const int size = width * height;
-        const bool vLimit = (y == const_ny-2);
-        const bool hLimit = (x == const_nx-2);
-        __shared__ pixel_t subMatrix[size];
-
-        int sub_x = threadIdx.x + const_khalf;
-        int sub_y = threadIdx.y + const_khalf;
-
-        if(sub_x == 1 && sub_y == 1)
-            subMatrix[(sub_y-1)*width + sub_x-1] = in[(y-1)*const_nx + x-1];
-        else if(sub_x == 1 && (vLimit || sub_y == height-2))
-            subMatrix[(sub_y+1)*width + sub_x-1] = in[(y+1)*const_nx + x-1];
-        else if((hLimit || sub_x == width-2) && sub_y == 1)
-            subMatrix[(sub_y-1)*width + sub_x+1] = in[(y-1)*const_nx + x+1];
-        else if((hLimit || sub_x == width-2) && (vLimit || sub_y == height-2))
-            subMatrix[(sub_y+1)*width + sub_x+1] = in[(y+1)*const_nx + x+1];
-
-        if(sub_x == 1)
-            subMatrix[sub_y*width + sub_x-1] = in[y*const_nx + x-1];
-        else if(hLimit || sub_x == width-2)
-            subMatrix[sub_y*width + sub_x+1] = in[y*const_nx + x+1];
-
-        if(sub_y == 1)
-            subMatrix[(sub_y-1)*width + sub_x] = in[(y-1)*const_nx + x];
-        else if(vLimit || sub_y == height-2)
-            subMatrix[(sub_y+1)*width + sub_x] = in[(y+1)*const_nx + x];
-
-        subMatrix[sub_y*width + sub_x] = in[y*const_nx + x];
-
-        __syncthreads();
-
         float pixel = 0.0;
         size_t c = 0;
         for(int j = -const_khalf; j <= const_khalf; j++) 
             for(int i = -const_khalf; i <= const_khalf; i++)
-                pixel += subMatrix[(sub_y+j)*width + sub_x+i] * kernel[c++];
-        out[y*const_nx + x] = (pixel_t) pixel;
+                pixel += in[(y - j) * const_nx + x - i] * kernel[c++];
+        out[y * const_nx + x] = (pixel_t) pixel;
     }
 }
 
@@ -351,57 +319,23 @@ __global__  void non_maximum_supression_kernel(const pixel_t *afterGx, const pix
     
     if((x < (const_nx - 1)) && (y < (const_ny - 1)))
     {
-        const int width = 18;
-        const int height = 34;
-        const int size = width * height;
-        const bool vLimit = (y == const_ny-2);
-        const bool hLimit = (x == const_nx-2);
-        __shared__ pixel_t subMatrix[size];
-
-        int sub_x = threadIdx.x + 1;
-        int sub_y = threadIdx.y + 1;
-
-        if(sub_x == 1 && sub_y == 1)
-            subMatrix[(sub_y-1)*width + sub_x-1] = G[(y-1)*const_nx + x-1];
-        else if(sub_x == 1 && (vLimit || sub_y == height-2))
-            subMatrix[(sub_y+1)*width + sub_x-1] = G[(y+1)*const_nx + x-1];
-        else if((hLimit || sub_x == width-2) && sub_y == 1)
-            subMatrix[(sub_y-1)*width + sub_x+1] = G[(y-1)*const_nx + x+1];
-        else if((hLimit || sub_x == width-2) && (vLimit || sub_y == height-2))
-            subMatrix[(sub_y+1)*width + sub_x+1] = G[(y+1)*const_nx + x+1];
-
-        if(sub_x == 1)
-            subMatrix[sub_y*width + sub_x-1] = G[y*const_nx + x-1];
-        else if(hLimit || sub_x == width-2)
-            subMatrix[sub_y*width + sub_x+1] = G[y*const_nx + x+1];
-
-        if(sub_y == 1)
-            subMatrix[(sub_y-1)*width + sub_x] = G[(y-1)*const_nx + x];
-        else if(vLimit || sub_y == height-2)
-            subMatrix[(sub_y+1)*width + sub_x] = G[(y+1)*const_nx + x];
-
-        subMatrix[sub_y*width + sub_x] = G[y*const_nx + x];
-
-        int c = y*const_nx + x;
-        int sub_c = sub_x + width*sub_y;
-        int nn = sub_c - width;
-        int ss = sub_c + width;
-        int ww = sub_c + 1;
-        int ee = sub_c - 1;
+        int c = x + const_nx * y;
+        int nn = c - const_nx;
+        int ss = c + const_nx;
+        int ww = c + 1;
+        int ee = c - 1;
         int nw = nn + 1;
         int ne = nn - 1;
         int sw = ss + 1;
         int se = ss - 1;
 
-        __syncthreads();
-
         float dir = (float) (fmod(atan2((double) afterGy[c],(double) afterGx[c]) + M_PI, M_PI) / M_PI) * 8;
 
-        if(((dir <= 1 || dir > 7) && subMatrix[sub_c] > subMatrix[ee] && subMatrix[sub_c] > subMatrix[ww]) ||
-           ((dir > 1 && dir <= 3) && subMatrix[sub_c] > subMatrix[nw] && subMatrix[sub_c] > subMatrix[se]) ||
-           ((dir > 3 && dir <= 5) && subMatrix[sub_c] > subMatrix[nn] && subMatrix[sub_c] > subMatrix[ss]) ||
-           ((dir > 5 && dir <= 7) && subMatrix[sub_c] > subMatrix[ne] && subMatrix[sub_c] > subMatrix[sw]))
-            nms[c] = subMatrix[sub_c];
+        if(((dir <= 1 || dir > 7) && G[c] > G[ee] && G[c] > G[ww]) ||
+           ((dir > 1 && dir <= 3) && G[c] > G[nw] && G[c] > G[se]) ||
+           ((dir > 3 && dir <= 5) && G[c] > G[nn] && G[c] > G[ss]) ||
+           ((dir > 5 && dir <= 7) && G[c] > G[ne] && G[c] > G[sw]))
+            nms[c] = G[c];
         else
             nms[c] = 0;
     }
@@ -439,6 +373,31 @@ void merging_gradients_device(const pixel_t *after_Gx, const pixel_t *after_Gy, 
     merging_gradients_kernel <<<gridSize, blockSize>>> (after_Gx, after_Gy, G);
 }
 
+__global__ void first_edges_kernel(const pixel_t *nms, pixel_t *ref)
+{
+    int x = threadIdx.x + blockIdx.x * blockDim.x + 1;
+    int y = threadIdx.y + blockIdx.y * blockDim.y + 1;
+
+    if((x < (const_nx - 1)) && (y < (const_ny - 1)))
+    {
+        size_t c = x + const_nx * y;
+        if(nms[c] >= const_tmax)
+            ref[c] = MAX_BRIGHTNESS;
+    }
+}
+
+// edges found in first pass for nms > tmax
+void first_edges_device(const pixel_t *nms, pixel_t *reference, const int nx, const int ny,
+                        const int tmax)
+{
+    cudaMemcpyToSymbol(const_tmax, &tmax, sizeof(int));
+
+    dim3 gridSize(ceil((nx - 2)/ 16.0), ceil((ny - 2)/ 32.0));              
+    dim3 blockSize(16, 32);             // 512 threads (x - 16, y - 32)
+
+    first_edges_kernel <<<gridSize, blockSize>>> (nms, reference);
+}
+
 // canny edge detector code to run on the GPU
 void cannyDevice( const int *h_idata, const int w, const int h, 
                   const int tmin, const int tmax, 
@@ -452,9 +411,9 @@ void cannyDevice( const int *h_idata, const int w, const int h,
 
     cudaMemcpyToSymbol(const_nx, &nx, sizeof(int));
     cudaMemcpyToSymbol(const_ny, &ny, sizeof(int));
- 
-    pixel_t *nms      = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
 
+    pixel_t *nms      = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
+    
     // cuda pointers
     pixel_t *dev_h_odata;
     pixel_t *dev_G;
@@ -510,11 +469,12 @@ void cannyDevice( const int *h_idata, const int w, const int h,
     // Non-maximum suppression, straightforward implementation.
     non_maximum_supression_device(dev_after_Gx, dev_after_Gy, dev_G, dev_nms, nx, ny);
 
-    cudaMemcpy(nms, dev_nms, memSize, cudaMemcpyDeviceToHost);
-
     // edges with nms >= tmax
-    memset(h_odata, 0, sizeof(pixel_t) * nx * ny);
-    first_edges(nms, h_odata, nx, ny, tmax);
+    cudaMemset(dev_h_odata, 0, memSize);
+    first_edges_device(dev_nms, dev_h_odata, nx, ny, tmax);
+
+    cudaMemcpy(nms, dev_nms, memSize, cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_odata, dev_h_odata, memSize, cudaMemcpyDeviceToHost);
 
     // edges with nms >= tmin && neighbor is edge
     bool changed;
@@ -522,7 +482,7 @@ void cannyDevice( const int *h_idata, const int w, const int h,
         changed = false;
         hysteresis_edges(nms, h_odata, nx, ny, tmin, &changed);
     } while (changed==true);
-
+ 
     cudaFree(dev_h_odata);
     cudaFree(dev_G);
     cudaFree(dev_after_Gx);
@@ -641,7 +601,7 @@ int main( int argc, char** argv)
     // allocate mem for the result on host side
     //int* h_odata = (int*) malloc( h*w*sizeof(unsigned int));
     //int* reference = (int*) malloc( h*w*sizeof(unsigned int));
-    
+ 	
     int* h_odata = (int*) calloc(h*w, sizeof(unsigned int));
     int* reference = (int*) calloc(h*w, sizeof(unsigned int));
 
