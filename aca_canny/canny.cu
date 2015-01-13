@@ -290,7 +290,7 @@ __global__  void convolution_kernel(const pixel_t *in, const float *kernel, pixe
         int sub_x = threadIdx.x + const_khalf;
         int sub_y = threadIdx.y + const_khalf;
 
-        if(threadIdx.x % 3 == 1 && threadIdx.y % 3 == 1) {
+        if(sub_x % 3 == 1 && sub_y % 3 == 1) {
             for(int j = -const_khalf; j <= const_khalf; j++) 
                 for(int i = -const_khalf; i <= const_khalf; i++)
                     subMatrix[(sub_y + j)*blockDim.x + sub_x + i] = in[(y + j)*const_nx + x + i];
