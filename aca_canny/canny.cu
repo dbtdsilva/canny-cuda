@@ -374,18 +374,18 @@ __global__  void non_maximum_supression_kernel(const pixel_t *afterGx, const pix
         int se = ss - 1;
 
         if(sub_x == 1 && sub_y == 1)
-            subMatrix[nw] = G[(y-1)*const_nx + x-1];
+            subMatrix[ne] = G[(y-1)*const_nx + x-1];
         else if(sub_x == 1 && (vLimit || sub_y == height-2))
-            subMatrix[sw] = G[(y+1)*const_nx + x-1];
+            subMatrix[se] = G[(y+1)*const_nx + x-1];
         else if((hLimit || sub_x == width-2) && sub_y == 1)
-            subMatrix[ne] = G[(y-1)*const_nx + x+1];
+            subMatrix[nw] = G[(y-1)*const_nx + x+1];
         else if((hLimit || sub_x == width-2) && (vLimit || sub_y == height-2))
-            subMatrix[se] = G[(y+1)*const_nx + x+1];
+            subMatrix[sw] = G[(y+1)*const_nx + x+1];
 
         if(sub_x == 1)
-            subMatrix[ww] = G[c-1];
+            subMatrix[ee] = G[c-1];
         else if(hLimit || sub_x == width-2)
-            subMatrix[ee] = G[c+1];
+            subMatrix[ww] = G[c+1];
 
         if(sub_y == 1)
             subMatrix[nn] = G[(y-1)*const_nx + x];
