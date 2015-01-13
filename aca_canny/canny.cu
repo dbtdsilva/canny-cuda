@@ -283,18 +283,35 @@ __global__  void convolution_kernel(const pixel_t *in, const float *kernel, pixe
 
     if((x < (const_nx - const_khalf)) && (y < (const_ny - const_khalf)))
     {
-        const int size = 18*34;
+        const int width = blockDim.x + 2 * const_khalf;
+        const int height = blockDim.y + 2 * const_khalf;
+        const int size = width * height;
 
         __shared__ pixel_t subMatrix[size];
 
         int sub_x = threadIdx.x + const_khalf;
         int sub_y = threadIdx.y + const_khalf;
 
-        if(sub_x % 3 == 1 && sub_y % 3 == 1) {
-            for(int j = -const_khalf; j <= const_khalf; j++) 
-                for(int i = -const_khalf; i <= const_khalf; i++)
-                    subMatrix[(sub_y + j)*blockDim.x + sub_x + i] = in[(y + j)*const_nx + x + i];
-        }
+        if(sub_x == 1 && sub_y == 1)
+            subMatrix[(sub_y-1)*width + sub_x-1] = in[(y-1)*const_nx + x-1];
+        else if(sub_x == 1 && sub_y = height-2)
+            subMatrix[(sub_y+1)*width + sub_x-1] = in[(y+1)*const_nx + x-1];
+        else if(sub_x == width-2 && sub_y == 1)
+            subMatrix[(sub_y-1)*width + sub_x+1] = in[(y-1)*const_nx + x+1];
+        else if(sub_x == width-2 && sub_y == height-2)
+            subMatrix[(sub_y+1)*width + sub_x+1] = in[(y+1)*const_nx + x+1];
+
+        if(sub_x == 1)
+            subMatrix[sub_y*width] = in[y*const_nx+x-1];
+        else if(sub_x == width-2)
+            subMatrix[sub_y*width+sub_x+1] = in[y*const_nx+x+1];
+
+        if(sub_y == 1)
+            subMatrix[(sub_y-1)*width+sub_x] = in[(y-1)*const_nx+x];
+        else if(sub_y == height-2)
+            subMatrix[(sub_y+1)*width+sub_x] = in[(y+1)*const_nx+x];
+
+        subMatrix[sub_y*width + sub_x] = in[y*const_nx + x];
 
         __syncthreads();
 
