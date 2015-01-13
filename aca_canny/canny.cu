@@ -276,7 +276,7 @@ void cannyHost( const int *h_idata, const int w, const int h,
 }   
 
 /* DEVICE OPERATIONS */
-__device__ pixel_t* getSubPixelMatrix(const pixel_t *in, const int x, const int y)
+__device__ pixel_t[] getSubPixelMatrix(const pixel_t *in, const int x, const int y)
 {
     pixel_t subMatrix[9];
     int counter = 0;
@@ -306,8 +306,9 @@ __global__  void convolution_kernel(const pixel_t *in, const float *kernel, pixe
             threadIdx.y == 0 || threadIdx.y == blockDim.y-1)
         {
             int counter = 0;
+            pixel_t* sub;
             
-            pixel_t* sub = getSubPixelMatrix(in, x, y);
+            sub = getSubPixelMatrix(in, x, y);
 
             for(int j = -const_khalf; j <= const_khalf; j++) 
                 for(int i = -const_khalf; i <= const_khalf; i++)
