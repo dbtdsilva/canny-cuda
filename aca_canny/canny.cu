@@ -384,10 +384,10 @@ __global__  void non_maximum_supression_kernel(const pixel_t *afterGx, const pix
 
         int c = y*const_nx + x;
         int sub_c = sub_x + width*sub_y;
-        int nn = c - width;
-        int ss = c + width;
-        int ww = c + 1;
-        int ee = c - 1;
+        int nn = sub_c - width;
+        int ss = sub_c + width;
+        int ww = sub_c + 1;
+        int ee = sub_c - 1;
         int nw = nn + 1;
         int ne = nn - 1;
         int sw = ss + 1;
