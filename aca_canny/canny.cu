@@ -320,7 +320,7 @@ __global__  void convolution_kernel(const pixel_t *in, const float *kernel, pixe
         size_t c = 0;
         for(int j = -const_khalf; j <= const_khalf; j++) 
             for(int i = -const_khalf; i <= const_khalf; i++)
-                pixel += subMatrix[(sub_y-j)*width + sub_x-i] * kernel[c++];
+                pixel += subMatrix[(sub_y+j)*width + sub_x+i] * kernel[c++];
         out[y*const_nx + x] = (pixel_t) pixel;
     }
 }
