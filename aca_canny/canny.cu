@@ -286,7 +286,8 @@ __global__  void convolution_kernel(const pixel_t *in, const float *kernel, pixe
         const int width = 18;
         const int height = 34;
         const int size = width * height;
-
+        const bool vLimit = (y == const_ny-2);
+        const bool hLimit = (x == const_nx-2);
         __shared__ pixel_t subMatrix[size];
 
         int sub_x = threadIdx.x + const_khalf;
@@ -294,22 +295,22 @@ __global__  void convolution_kernel(const pixel_t *in, const float *kernel, pixe
 
         if(sub_x == 1 && sub_y == 1)
             subMatrix[(sub_y-1)*width + sub_x-1] = in[(y-1)*const_nx + x-1];
-        else if(sub_x == 1 && sub_y == height-2)
+        else if(sub_x == 1 && vLimit)
             subMatrix[(sub_y+1)*width + sub_x-1] = in[(y+1)*const_nx + x-1];
-        else if(sub_x == width-2 && sub_y == 1)
+        else if(hLimit && sub_y == 1)
             subMatrix[(sub_y-1)*width + sub_x+1] = in[(y-1)*const_nx + x+1];
-        else if(sub_x == width-2 && sub_y == height-2)
+        else if(hLimit && vLimit)
             subMatrix[(sub_y+1)*width + sub_x+1] = in[(y+1)*const_nx + x+1];
 
         if(sub_x == 1)
-            subMatrix[sub_y*width] = in[y*const_nx+x-1];
-        else if(sub_x == width-2)
-            subMatrix[sub_y*width+sub_x+1] = in[y*const_nx+x+1];
+            subMatrix[sub_y*width] = in[y*const_nx + x-1];
+        else if(hLimit)
+            subMatrix[sub_y*width + sub_x+1] = in[y*const_nx + x+1];
 
         if(sub_y == 1)
-            subMatrix[(sub_y-1)*width+sub_x] = in[(y-1)*const_nx+x];
-        else if(sub_y == height-2)
-            subMatrix[(sub_y+1)*width+sub_x] = in[(y+1)*const_nx+x];
+            subMatrix[(sub_y-1)*width+sub_x] = in[(y-1)*const_nx + x];
+        else if(vLimit)
+            subMatrix[(sub_y+1)*width+sub_x] = in[(y+1)*const_nx + x];
 
         subMatrix[sub_y*width + sub_x] = in[y*const_nx + x];
 
