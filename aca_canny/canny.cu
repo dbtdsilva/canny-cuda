@@ -286,8 +286,8 @@ __global__  void convolution_kernel(const pixel_t *in, const float *kernel, pixe
         const int width = 18;
         const int height = 34;
         const int size = width * height;
-        const bool vLimit = (y == const_ny-2);
-        const bool hLimit = (x == const_nx-2);
+        const bool vLimit = (y == const_ny-3);
+        const bool hLimit = (x == const_nx-3);
         __shared__ pixel_t subMatrix[size];
 
         int sub_x = threadIdx.x + const_khalf;
