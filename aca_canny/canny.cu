@@ -282,15 +282,48 @@ __global__  void convolution_kernel(const pixel_t *in, const float *kernel, pixe
 {
     int x = threadIdx.x + blockIdx.x * blockDim.x + const_khalf;
     int y = threadIdx.y + blockIdx.y * blockDim.y + const_khalf;
-    
+
     if((x < (const_nx - const_khalf)) && (y < (const_ny - const_khalf)))
     {
+        const int width = 18;
+        const int height = 34;
+        const int size = width * height;
+        const bool vLimit = (y == const_ny-2);
+        const bool hLimit = (x == const_nx-2);
+        __shared__ pixel_t subMatrix[size];
+
+        int sub_x = threadIdx.x + const_khalf;
+        int sub_y = threadIdx.y + const_khalf;
+
+        if(sub_x == 1 && sub_y == 1)
+            subMatrix[(sub_y-1)*width + sub_x-1] = in[(y-1)*const_nx + x-1];
+        else if(sub_x == 1 && (vLimit || sub_y == height-2))
+            subMatrix[(sub_y+1)*width + sub_x-1] = in[(y+1)*const_nx + x-1];
+        else if((hLimit || sub_x == width-2) && sub_y == 1)
+            subMatrix[(sub_y-1)*width + sub_x+1] = in[(y-1)*const_nx + x+1];
+        else if((hLimit || sub_x == width-2) && (vLimit || sub_y == height-2))
+            subMatrix[(sub_y+1)*width + sub_x+1] = in[(y+1)*const_nx + x+1];
+
+        if(sub_x == 1)
+            subMatrix[sub_y*width + sub_x-1] = in[y*const_nx + x-1];
+        else if(hLimit || sub_x == width-2)
+            subMatrix[sub_y*width + sub_x+1] = in[y*const_nx + x+1];
+
+        if(sub_y == 1)
+            subMatrix[(sub_y-1)*width + sub_x] = in[(y-1)*const_nx + x];
+        else if(vLimit || sub_y == height-2)
+            subMatrix[(sub_y+1)*width + sub_x] = in[(y+1)*const_nx + x];
+
+        subMatrix[sub_y*width + sub_x] = in[y*const_nx + x];
+
+        __syncthreads();
+
         float pixel = 0.0;
         size_t c = 0;
         for(int j = -const_khalf; j <= const_khalf; j++) 
             for(int i = -const_khalf; i <= const_khalf; i++)
-                pixel += in[(y - j) * const_nx + x - i] * kernel[c++];
-        out[y * const_nx + x] = (pixel_t) pixel;
+                pixel += subMatrix[(sub_y+j)*width + sub_x+i] * kernel[c++];
+        out[y*const_nx + x] = (pixel_t) pixel;
     }
 }
 
@@ -319,23 +352,57 @@ __global__  void non_maximum_supression_kernel(const pixel_t *afterGx, const pix
     
     if((x < (const_nx - 1)) && (y < (const_ny - 1)))
     {
-        int c = x + const_nx * y;
-        int nn = c - const_nx;
-        int ss = c + const_nx;
-        int ww = c + 1;
-        int ee = c - 1;
+        const int width = 18;
+        const int height = 34;
+        const int size = width * height;
+        const bool vLimit = (y == const_ny-2);
+        const bool hLimit = (x == const_nx-2);
+        __shared__ pixel_t subMatrix[size];
+
+        int sub_x = threadIdx.x + 1;
+        int sub_y = threadIdx.y + 1;
+
+        if(sub_x == 1 && sub_y == 1)
+            subMatrix[(sub_y-1)*width + sub_x-1] = G[(y-1)*const_nx + x-1];
+        else if(sub_x == 1 && (vLimit || sub_y == height-2))
+            subMatrix[(sub_y+1)*width + sub_x-1] = G[(y+1)*const_nx + x-1];
+        else if((hLimit || sub_x == width-2) && sub_y == 1)
+            subMatrix[(sub_y-1)*width + sub_x+1] = G[(y-1)*const_nx + x+1];
+        else if((hLimit || sub_x == width-2) && (vLimit || sub_y == height-2))
+            subMatrix[(sub_y+1)*width + sub_x+1] = G[(y+1)*const_nx + x+1];
+
+        if(sub_x == 1)
+            subMatrix[sub_y*width + sub_x-1] = G[y*const_nx + x-1];
+        else if(hLimit || sub_x == width-2)
+            subMatrix[sub_y*width + sub_x+1] = G[y*const_nx + x+1];
+
+        if(sub_y == 1)
+            subMatrix[(sub_y-1)*width + sub_x] = G[(y-1)*const_nx + x];
+        else if(vLimit || sub_y == height-2)
+            subMatrix[(sub_y+1)*width + sub_x] = G[(y+1)*const_nx + x];
+
+        subMatrix[sub_y*width + sub_x] = G[y*const_nx + x];
+
+        int c = y*const_nx + x;
+        int sub_c = sub_x + width*sub_y;
+        int nn = sub_c - width;
+        int ss = sub_c + width;
+        int ww = sub_c + 1;
+        int ee = sub_c - 1;
         int nw = nn + 1;
         int ne = nn - 1;
         int sw = ss + 1;
         int se = ss - 1;
 
+        __syncthreads();
+
         float dir = (float) (fmod(atan2((double) afterGy[c],(double) afterGx[c]) + M_PI, M_PI) / M_PI) * 8;
 
-        if(((dir <= 1 || dir > 7) && G[c] > G[ee] && G[c] > G[ww]) ||
-           ((dir > 1 && dir <= 3) && G[c] > G[nw] && G[c] > G[se]) ||
-           ((dir > 3 && dir <= 5) && G[c] > G[nn] && G[c] > G[ss]) ||
-           ((dir > 5 && dir <= 7) && G[c] > G[ne] && G[c] > G[sw]))
-            nms[c] = G[c];
+        if(((dir <= 1 || dir > 7) && subMatrix[sub_c] > subMatrix[ee] && subMatrix[sub_c] > subMatrix[ww]) ||
+           ((dir > 1 && dir <= 3) && subMatrix[sub_c] > subMatrix[nw] && subMatrix[sub_c] > subMatrix[se]) ||
+           ((dir > 3 && dir <= 5) && subMatrix[sub_c] > subMatrix[nn] && subMatrix[sub_c] > subMatrix[ss]) ||
+           ((dir > 5 && dir <= 7) && subMatrix[sub_c] > subMatrix[ne] && subMatrix[sub_c] > subMatrix[sw]))
+            nms[c] = subMatrix[sub_c];
         else
             nms[c] = 0;
     }
