@@ -294,7 +294,7 @@ __global__  void convolution_kernel(const pixel_t *in, const float *kernel, pixe
 
         if(sub_x == 1 && sub_y == 1)
             subMatrix[(sub_y-1)*width + sub_x-1] = in[(y-1)*const_nx + x-1];
-        else if(sub_x == 1 && sub_y = height-2)
+        else if(sub_x == 1 && sub_y == height-2)
             subMatrix[(sub_y+1)*width + sub_x-1] = in[(y+1)*const_nx + x-1];
         else if(sub_x == width-2 && sub_y == 1)
             subMatrix[(sub_y-1)*width + sub_x+1] = in[(y-1)*const_nx + x+1];
