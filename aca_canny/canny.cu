@@ -503,7 +503,7 @@ __global__ void hysteresis_edges_kernel(const pixel_t *nms, pixel_t *ref, bool *
         if(sub_x == 1 && sub_y == 1)
         {
             subMatrix[nbs[5]] = ref[(y-1)*const_nx + x-1];
-            boreder = true;
+            border = true;
         }
         else if(sub_x == 1 && (vLimit || sub_y == height-2))
         {
@@ -543,7 +543,7 @@ __global__ void hysteresis_edges_kernel(const pixel_t *nms, pixel_t *ref, bool *
             border = true;
         }
 
-        subMatrix[sub_t] = G[t];
+        subMatrix[sub_t] = ref[t];
 
         __syncthreads();
 
