@@ -1,0 +1,2 @@
+Host processing time: 20.020800 (ms)
+Device processing time: 12.945856 (ms)
