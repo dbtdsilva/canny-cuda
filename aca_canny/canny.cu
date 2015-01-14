@@ -363,7 +363,6 @@ void cannyDevice( const int *h_idata, const int w, const int h,
     size_t offset;
     cudaBindTexture(&offset, tex_h_odata, dev_h_odata, memSize);
 
-
     const float Gx[] = {-1, 0, 1,
                         -2, 0, 2,
                         -1, 0, 1};
