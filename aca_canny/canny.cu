@@ -27,6 +27,10 @@ __constant__ int const_nx;
 __constant__ int const_ny;
 __constant__ int const_khalf;
 
+// Textures
+texture<int, cudaTextureType1D, cudaReadModeElementType> tex_h_odata;
+texture<float, cudaTextureType1D, cudaReadModeElementType> tex_grad;
+
 // convolution of in image to out image using kernel of kn width
 void convolution(const pixel_t *in, pixel_t *out, const float *kernel,
                  const int nx, const int ny, const int kn)
@@ -276,58 +280,25 @@ void cannyHost( const int *h_idata, const int w, const int h,
 }   
 
 /* DEVICE OPERATIONS */
-__global__  void convolution_kernel(const pixel_t *in, const float *kernel, pixel_t *out) 
+
+__global__  void convolution_kernel(pixel_t *out) 
 {
     int x = threadIdx.x + blockIdx.x * blockDim.x + const_khalf;
     int y = threadIdx.y + blockIdx.y * blockDim.y + const_khalf;
-
+    
     if((x < (const_nx - const_khalf)) && (y < (const_ny - const_khalf)))
     {
-        const int width = 18;
-        const int height = 34;
-        const int size = width * height;
-        const bool vLimit = (y == const_ny-2);
-        const bool hLimit = (x == const_nx-2);
-        __shared__ pixel_t subMatrix[size];
-
-        int sub_x = threadIdx.x + const_khalf;
-        int sub_y = threadIdx.y + const_khalf;
-
-        if(sub_x == 1 && sub_y == 1)
-            subMatrix[(sub_y-1)*width + sub_x-1] = in[(y-1)*const_nx + x-1];
-        else if(sub_x == 1 && (vLimit || sub_y == height-2))
-            subMatrix[(sub_y+1)*width + sub_x-1] = in[(y+1)*const_nx + x-1];
-        else if((hLimit || sub_x == width-2) && sub_y == 1)
-            subMatrix[(sub_y-1)*width + sub_x+1] = in[(y-1)*const_nx + x+1];
-        else if((hLimit || sub_x == width-2) && (vLimit || sub_y == height-2))
-            subMatrix[(sub_y+1)*width + sub_x+1] = in[(y+1)*const_nx + x+1];
-
-        if(sub_x == 1)
-            subMatrix[sub_y*width + sub_x-1] = in[y*const_nx + x-1];
-        else if(hLimit || sub_x == width-2)
-            subMatrix[sub_y*width + sub_x+1] = in[y*const_nx + x+1];
-
-        if(sub_y == 1)
-            subMatrix[(sub_y-1)*width + sub_x] = in[(y-1)*const_nx + x];
-        else if(vLimit || sub_y == height-2)
-            subMatrix[(sub_y+1)*width + sub_x] = in[(y+1)*const_nx + x];
-
-        subMatrix[sub_y*width + sub_x] = in[y*const_nx + x];
-
-        __syncthreads();
-
         float pixel = 0.0;
         size_t c = 0;
         for(int j = -const_khalf; j <= const_khalf; j++) 
             for(int i = -const_khalf; i <= const_khalf; i++)
-                pixel += subMatrix[(sub_y+j)*width + sub_x+i] * kernel[c++];
-        out[y*const_nx + x] = (pixel_t) pixel;
+                pixel += tex1Dfetch(tex_h_odata, ((y+j)*const_nx + x+i)) * tex1Dfetch(tex_grad, c++);
+        out[y * const_nx + x] = (pixel_t) pixel;
     }
 }
 
 // convolution of in image to out image using kernel of kn width
-void convolution_device(const pixel_t *in, pixel_t *out, const float *kernel,
-                 const int nx, const int ny, const int kn)
+void convolution_device(pixel_t *out, const int nx, const int ny, const int kn)
 {
     assert(kn % 2 == 1);
     assert(nx > kn && ny > kn);
@@ -339,7 +310,7 @@ void convolution_device(const pixel_t *in, pixel_t *out, const float *kernel,
     dim3 gridSize(ceil((nx - 2*khalf)/ 16.0), ceil((ny - 2*khalf)/ 32.0));              
     dim3 blockSize(16, 32);             // 512 threads (x - 16, y - 32)
     
-    convolution_kernel <<<gridSize, blockSize>>> (in, kernel, out);
+    convolution_kernel <<<gridSize, blockSize>>> (out);
 }
 
 
@@ -389,23 +360,29 @@ void cannyDevice( const int *h_idata, const int w, const int h,
  
     cudaMemcpy(dev_h_odata, h_odata, memSize, cudaMemcpyHostToDevice);
 
+    size_t offset;
+    cudaBindTexture(&offset, tex_h_odata, dev_h_odata, memSize);
+
     const float Gx[] = {-1, 0, 1,
                         -2, 0, 2,
                         -1, 0, 1};
  
     cudaMemcpy(dev_grad, Gx, gradSize, cudaMemcpyHostToDevice);
+    cudaBindTexture(&offset, tex_grad, dev_grad, gradSize);
 
     // Gradient along x
-    convolution_device(dev_h_odata, dev_after_Gx, dev_grad, nx, ny, 3);
+    convolution_device(dev_after_Gx, nx, ny, 3);
  
     const float Gy[] = { 1, 2, 1,
                          0, 0, 0,
                         -1,-2,-1};
- 
+    
+    cudaUnbindTexture(tex_grad);
     cudaMemcpy(dev_grad, Gy, gradSize, cudaMemcpyHostToDevice);
+    cudaBindTexture(&offset, tex_grad, dev_grad, gradSize);
 
     // Gradient along y
-    convolution_device(dev_h_odata, dev_after_Gy, dev_grad, nx, ny, 3);
+    convolution_device(dev_after_Gy, nx, ny, 3);
     
     cudaMemcpy(after_Gx, dev_after_Gx, memSize, cudaMemcpyDeviceToHost);
     cudaMemcpy(after_Gy, dev_after_Gy, memSize, cudaMemcpyDeviceToHost);
