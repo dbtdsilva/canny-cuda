@@ -339,7 +339,7 @@ __global__  void non_maximum_supression_kernel(pixel_t *nms)
            ((dir > 1 && dir <= 3) && tex1Dfetch(tex_G, c) > tex1Dfetch(tex_G, nw) && tex1Dfetch(tex_G, c) > tex1Dfetch(tex_G, se)) ||
            ((dir > 3 && dir <= 5) && tex1Dfetch(tex_G, c) > tex1Dfetch(tex_G, nn) && tex1Dfetch(tex_G, c) > tex1Dfetch(tex_G, ss)) ||
            ((dir > 5 && dir <= 7) && tex1Dfetch(tex_G, c) > tex1Dfetch(tex_G, ne) && tex1Dfetch(tex_G, c) > tex1Dfetch(tex_G, sw)))
-            nms[c] = tex1Dfetch(tex_h_odata, c);
+            nms[c] = tex1Dfetch(tex_G, c);
         else
             nms[c] = 0;
     }
@@ -434,7 +434,6 @@ void cannyDevice( const int *h_idata, const int w, const int h,
 
     // Gradient along x
     convolution_device(dev_after_Gx, nx, ny, 3);
-
     cudaBindTexture(&offset, tex_after_Gx, dev_after_Gx, memSize);
  
     const float Gy[] = { 1, 2, 1,
@@ -448,6 +447,8 @@ void cannyDevice( const int *h_idata, const int w, const int h,
     // Gradient along y
     convolution_device(dev_after_Gy, nx, ny, 3);
     cudaBindTexture(&offset, tex_after_Gy, dev_after_Gy, memSize);
+    cudaUnbindTexture(tex_grad);
+    cudaUnbindTexture(tex_h_odata);
 
     merging_gradients_device(dev_G, nx, ny);
 
