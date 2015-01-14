@@ -276,19 +276,51 @@ void cannyHost( const int *h_idata, const int w, const int h,
 }   
 
 /* DEVICE OPERATIONS */
-
 __global__  void convolution_kernel(const pixel_t *in, const float *kernel, pixel_t *out) 
 {
     int x = threadIdx.x + blockIdx.x * blockDim.x + const_khalf;
     int y = threadIdx.y + blockIdx.y * blockDim.y + const_khalf;
-    
+
     if((x < (const_nx - const_khalf)) && (y < (const_ny - const_khalf)))
     {
+        const int width = 18;
+        const int height = 34;
+        const int size = width * height;
+        const bool vLimit = (y == const_ny-2);
+        const bool hLimit = (x == const_nx-2);
+        __shared__ pixel_t subMatrix[size];
+
+        int sub_x = threadIdx.x + const_khalf;
+        int sub_y = threadIdx.y + const_khalf;
+
+        if(sub_x == 1 && sub_y == 1)
+            subMatrix[(sub_y-1)*width + sub_x-1] = in[(y-1)*const_nx + x-1];
+        else if(sub_x == 1 && (vLimit || sub_y == height-2))
+            subMatrix[(sub_y+1)*width + sub_x-1] = in[(y+1)*const_nx + x-1];
+        else if((hLimit || sub_x == width-2) && sub_y == 1)
+            subMatrix[(sub_y-1)*width + sub_x+1] = in[(y-1)*const_nx + x+1];
+        else if((hLimit || sub_x == width-2) && (vLimit || sub_y == height-2))
+            subMatrix[(sub_y+1)*width + sub_x+1] = in[(y+1)*const_nx + x+1];
+
+        if(sub_x == 1)
+            subMatrix[sub_y*width + sub_x-1] = in[y*const_nx + x-1];
+        else if(hLimit || sub_x == width-2)
+            subMatrix[sub_y*width + sub_x+1] = in[y*const_nx + x+1];
+
+        if(sub_y == 1)
+            subMatrix[(sub_y-1)*width + sub_x] = in[(y-1)*const_nx + x];
+        else if(vLimit || sub_y == height-2)
+            subMatrix[(sub_y+1)*width + sub_x] = in[(y+1)*const_nx + x];
+
+        subMatrix[sub_y*width + sub_x] = in[y*const_nx + x];
+
+        __syncthreads();
+
         float pixel = 0.0;
         size_t c = 0;
         for(int j = -const_khalf; j <= const_khalf; j++) 
             for(int i = -const_khalf; i <= const_khalf; i++)
-                pixel += in[(y+j)*const_nx +x+i] * kernel[c++];
+                pixel += subMatrix[(sub_y+j)*width + sub_x+i] * kernel[c++];
         out[y*const_nx + x] = (pixel_t) pixel;
     }
 }
