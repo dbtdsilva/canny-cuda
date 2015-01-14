@@ -473,27 +473,100 @@ __global__ void hysteresis_edges_kernel(const pixel_t *nms, pixel_t *ref, bool *
 
     if((x < (const_nx - 1)) && (y < (const_ny - 1)))
     {
-        size_t t = x + const_nx * y;
+        const int width = 18;
+        const int height = 34;
+        const int size = width * height;
+        const bool vLimit = (y == const_ny-2);
+        const bool hLimit = (x == const_nx-2);
 
-        if(nms[t] >= const_tmin && ref[t] == 0)
+        bool border = false;
+
+        __shared__ pixel_t subMatrix[size];
+        __shared__ bool block_changed;
+
+        int sub_x = threadIdx.x + 1;
+        int sub_y = threadIdx.y + 1;
+
+        size_t t = x + const_nx * y;
+        int sub_t = sub_y*width + sub_x;
+
+        int nbs[8];
+        nbs[0] = sub_t - width;
+        nbs[1] = sub_t + width;
+        nbs[2] = sub_t + 1;
+        nbs[3] = sub_t - 1;
+        nbs[4] = nbs[0] + 1;
+        nbs[5] = nbs[0] - 1;
+        nbs[6] = nbs[1] + 1;
+        nbs[7] = nbs[1] - 1;
+
+        if(sub_x == 1 && sub_y == 1)
         {
-            int nbs[8];
-            nbs[0] = t - const_nx;
-            nbs[1] = t + const_nx;
-            nbs[2] = t + 1;
-            nbs[3] = t - 1;
-            nbs[4] = nbs[0] + 1;
-            nbs[5] = nbs[0] - 1;
-            nbs[6] = nbs[1] + 1;
-            nbs[7] = nbs[1] - 1;
-            
-            #pragma unroll
-            for(int k = 0; k < 8; k++)
-                if(ref[nbs[k]] != 0) {
-                    ref[t] = MAX_BRIGHTNESS;
-                    *changed = true;
-                }
+            subMatrix[nbs[5]] = ref[(y-1)*const_nx + x-1];
+            boreder = true;
         }
+        else if(sub_x == 1 && (vLimit || sub_y == height-2))
+        {
+            subMatrix[nbs[7]] = ref[(y+1)*const_nx + x-1];
+            border = true;
+        }
+        else if((hLimit || sub_x == width-2) && sub_y == 1)
+        {
+            subMatrix[nbs[4]] = ref[(y-1)*const_nx + x+1];
+            border = true;
+        }
+        else if((hLimit || sub_x == width-2) && (vLimit || sub_y == height-2))
+        {
+            subMatrix[nbs[6]] = ref[(y+1)*const_nx + x+1];
+            border = true;
+        }
+
+        if(sub_x == 1)
+        {
+            subMatrix[nbs[3]] = ref[t-1];
+            border = true;
+        }
+        else if(hLimit || sub_x == width-2)
+        {
+            subMatrix[nbs[2]] = ref[t+1];
+            border = true;
+        }
+
+        if(sub_y == 1)
+        {
+            subMatrix[nbs[0]] = ref[(y-1)*const_nx + x];
+            border = true;
+        }
+        else if(vLimit || sub_y == height-2)
+        {
+            subMatrix[nbs[1]] = ref[(y+1)*const_nx + x];
+            border = true;
+        }
+
+        subMatrix[sub_t] = G[t];
+
+        __syncthreads();
+
+        do {
+            block_changed = false;
+
+            if(nms[t] >= const_tmin && subMatrix[sub_t] == 0)
+            {
+                #pragma unroll
+                for(int k = 0; k < 8; k++)
+                    if(subMatrix[nbs[k]] != 0) {
+                        subMatrix[sub_t] = MAX_BRIGHTNESS;
+                        ref[t] = MAX_BRIGHTNESS;
+                        if(border)
+                            *changed = true;
+                        else
+                            block_changed = true;
+                        break;
+                    }
+            }
+
+            __syncthreads();
+        } while(block_changed && !(*changed));
     }
 }
 
