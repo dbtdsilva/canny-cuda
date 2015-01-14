@@ -30,6 +30,7 @@ __constant__ int const_khalf;
 // Textures
 texture<int, cudaTextureType1D, cudaReadModeElementType> tex_h_odata;
 texture<float, cudaTextureType1D, cudaReadModeElementType> tex_grad;
+texture<int, cudaTextureType1D, cudaReadModeElementType> tex_G;
 texture<int, cudaTextureType1D, cudaReadModeElementType> tex_after_Gx;
 texture<int, cudaTextureType1D, cudaReadModeElementType> tex_after_Gy;
 
@@ -334,10 +335,10 @@ __global__  void non_maximum_supression_kernel(pixel_t *nms)
 
         float dir = (float) (fmod(atan2((double) tex1Dfetch(tex_after_Gy, c), (double) tex1Dfetch(tex_after_Gx, c)) + M_PI, M_PI) / M_PI) * 8;
 
-        if(((dir <= 1 || dir > 7) && tex1Dfetch(tex_h_odata, c) > tex1Dfetch(tex_h_odata, ee) && tex1Dfetch(tex_h_odata, c) > tex1Dfetch(tex_h_odata, ww)) ||
-           ((dir > 1 && dir <= 3) && tex1Dfetch(tex_h_odata, c) > tex1Dfetch(tex_h_odata, nw) && tex1Dfetch(tex_h_odata, c) > tex1Dfetch(tex_h_odata, se)) ||
-           ((dir > 3 && dir <= 5) && tex1Dfetch(tex_h_odata, c) > tex1Dfetch(tex_h_odata, nn) && tex1Dfetch(tex_h_odata, c) > tex1Dfetch(tex_h_odata, ss)) ||
-           ((dir > 5 && dir <= 7) && tex1Dfetch(tex_h_odata, c) > tex1Dfetch(tex_h_odata, ne) && tex1Dfetch(tex_h_odata, c) > tex1Dfetch(tex_h_odata, sw)))
+        if(((dir <= 1 || dir > 7) && tex1Dfetch(tex_G, c) > tex1Dfetch(tex_G, ee) && tex1Dfetch(tex_G, c) > tex1Dfetch(tex_G, ww)) ||
+           ((dir > 1 && dir <= 3) && tex1Dfetch(tex_G, c) > tex1Dfetch(tex_G, nw) && tex1Dfetch(tex_G, c) > tex1Dfetch(tex_G, se)) ||
+           ((dir > 3 && dir <= 5) && tex1Dfetch(tex_G, c) > tex1Dfetch(tex_G, nn) && tex1Dfetch(tex_G, c) > tex1Dfetch(tex_G, ss)) ||
+           ((dir > 5 && dir <= 7) && tex1Dfetch(tex_G, c) > tex1Dfetch(tex_G, ne) && tex1Dfetch(tex_G, c) > tex1Dfetch(tex_G, sw)))
             nms[c] = tex1Dfetch(tex_h_odata, c);
         else
             nms[c] = 0;
@@ -446,11 +447,12 @@ void cannyDevice( const int *h_idata, const int w, const int h,
 
     // Gradient along y
     convolution_device(dev_after_Gy, nx, ny, 3);
-
     cudaBindTexture(&offset, tex_after_Gy, dev_after_Gy, memSize);
 
     merging_gradients_device(dev_G, nx, ny);
- 
+
+    cudaBindTexture(&offset, tex_G, dev_G, memSize);
+
     // Non-maximum suppression, straightforward implementation.
     non_maximum_supression_device(dev_nms, nx, ny);
 
