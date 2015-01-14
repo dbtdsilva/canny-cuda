@@ -27,6 +27,9 @@ __constant__ int const_nx;
 __constant__ int const_ny;
 __constant__ int const_khalf;
 
+// Textures
+texture<int, cudaTextureType1D, cudaReadModeElementType> tex_h_odata;
+
 // convolution of in image to out image using kernel of kn width
 void convolution(const pixel_t *in, pixel_t *out, const float *kernel,
                  const int nx, const int ny, const int kn)
@@ -288,7 +291,7 @@ __global__  void convolution_kernel(const pixel_t *in, const float *kernel, pixe
         size_t c = 0;
         for(int j = -const_khalf; j <= const_khalf; j++) 
             for(int i = -const_khalf; i <= const_khalf; i++)
-                pixel += in[(y + j) * const_nx + x + i] * kernel[c++];
+                pixel += tex1Dfetch(tex_h_odata, ((y + j) * const_nx + x + i)) * kernel[c++];
         out[y * const_nx + x] = (pixel_t) pixel;
     }
 }
@@ -356,6 +359,9 @@ void cannyDevice( const int *h_idata, const int w, const int h,
     gaussian_filter(h_idata, h_odata, nx, ny, sigma);
  
     cudaMemcpy(dev_h_odata, h_odata, memSize, cudaMemcpyHostToDevice);
+
+    size_t offset;
+    cudaBindTexture(&offset, tex_h_odata, dev_h_odata, memSize);
 
     const float Gx[] = {-1, 0, 1,
                         -2, 0, 2,
