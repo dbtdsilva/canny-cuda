@@ -26,8 +26,6 @@ typedef int pixel_t;
 __constant__ int const_nx;
 __constant__ int const_ny;
 __constant__ int const_khalf;
-__constant__ int const_tmax;
-__constant__ int const_tmin;
 
 // convolution of in image to out image using kernel of kn width
 void convolution(const pixel_t *in, pixel_t *out, const float *kernel,
@@ -283,48 +281,15 @@ __global__  void convolution_kernel(const pixel_t *in, const float *kernel, pixe
 {
     int x = threadIdx.x + blockIdx.x * blockDim.x + const_khalf;
     int y = threadIdx.y + blockIdx.y * blockDim.y + const_khalf;
-
+    
     if((x < (const_nx - const_khalf)) && (y < (const_ny - const_khalf)))
     {
-        const int width = 18;
-        const int height = 34;
-        const int size = width * height;
-        const bool vLimit = (y == const_ny-2);
-        const bool hLimit = (x == const_nx-2);
-        __shared__ pixel_t subMatrix[size];
-
-        int sub_x = threadIdx.x + const_khalf;
-        int sub_y = threadIdx.y + const_khalf;
-
-        if(sub_x == 1 && sub_y == 1)
-            subMatrix[(sub_y-1)*width + sub_x-1] = in[(y-1)*const_nx + x-1];
-        else if(sub_x == 1 && (vLimit || sub_y == height-2))
-            subMatrix[(sub_y+1)*width + sub_x-1] = in[(y+1)*const_nx + x-1];
-        else if((hLimit || sub_x == width-2) && sub_y == 1)
-            subMatrix[(sub_y-1)*width + sub_x+1] = in[(y-1)*const_nx + x+1];
-        else if((hLimit || sub_x == width-2) && (vLimit || sub_y == height-2))
-            subMatrix[(sub_y+1)*width + sub_x+1] = in[(y+1)*const_nx + x+1];
-
-        if(sub_x == 1)
-            subMatrix[sub_y*width + sub_x-1] = in[y*const_nx + x-1];
-        else if(hLimit || sub_x == width-2)
-            subMatrix[sub_y*width + sub_x+1] = in[y*const_nx + x+1];
-
-        if(sub_y == 1)
-            subMatrix[(sub_y-1)*width + sub_x] = in[(y-1)*const_nx + x];
-        else if(vLimit || sub_y == height-2)
-            subMatrix[(sub_y+1)*width + sub_x] = in[(y+1)*const_nx + x];
-
-        subMatrix[sub_y*width + sub_x] = in[y*const_nx + x];
-
-        __syncthreads();
-
         float pixel = 0.0;
         size_t c = 0;
         for(int j = -const_khalf; j <= const_khalf; j++) 
             for(int i = -const_khalf; i <= const_khalf; i++)
-                pixel += subMatrix[(sub_y+j)*width + sub_x+i] * kernel[c++];
-        out[y*const_nx + x] = (pixel_t) pixel;
+                pixel += in[(y + j) * const_nx + x + i] * kernel[c++];
+        out[y * const_nx + x] = (pixel_t) pixel;
     }
 }
 
@@ -345,221 +310,6 @@ void convolution_device(const pixel_t *in, pixel_t *out, const float *kernel,
     convolution_kernel <<<gridSize, blockSize>>> (in, kernel, out);
 }
 
-__global__  void non_maximum_supression_kernel(const pixel_t *afterGx, const pixel_t *afterGy,
-                            const pixel_t *G, pixel_t *nms)
-{
-    int x = threadIdx.x + blockIdx.x * blockDim.x + 1;
-    int y = threadIdx.y + blockIdx.y * blockDim.y + 1;
-    
-    if((x < (const_nx - 1)) && (y < (const_ny - 1)))
-    {
-        const int width = 18;
-        const int height = 34;
-        const int size = width * height;
-        const bool vLimit = (y == const_ny-2);
-        const bool hLimit = (x == const_nx-2);
-        __shared__ pixel_t subMatrix[size];
-
-        int sub_x = threadIdx.x + 1;
-        int sub_y = threadIdx.y + 1;
-
-        int c = y*const_nx + x;
-        int sub_c = sub_x + width*sub_y;
-        int nn = sub_c - width;
-        int ss = sub_c + width;
-        int ww = sub_c + 1;
-        int ee = sub_c - 1;
-        int nw = nn + 1;
-        int ne = nn - 1;
-        int sw = ss + 1;
-        int se = ss - 1;
-
-        if(sub_x == 1 && sub_y == 1)
-            subMatrix[ne] = G[(y-1)*const_nx + x-1];
-        else if(sub_x == 1 && (vLimit || sub_y == height-2))
-            subMatrix[se] = G[(y+1)*const_nx + x-1];
-        else if((hLimit || sub_x == width-2) && sub_y == 1)
-            subMatrix[nw] = G[(y-1)*const_nx + x+1];
-        else if((hLimit || sub_x == width-2) && (vLimit || sub_y == height-2))
-            subMatrix[sw] = G[(y+1)*const_nx + x+1];
-
-        if(sub_x == 1)
-            subMatrix[ee] = G[c-1];
-        else if(hLimit || sub_x == width-2)
-            subMatrix[ww] = G[c+1];
-
-        if(sub_y == 1)
-            subMatrix[nn] = G[(y-1)*const_nx + x];
-        else if(vLimit || sub_y == height-2)
-            subMatrix[ss] = G[(y+1)*const_nx + x];
-
-        subMatrix[sub_c] = G[c];
-
-        __syncthreads();
-
-        float dir = (float) (fmod(atan2((double) afterGy[c],(double) afterGx[c]) + M_PI, M_PI) / M_PI) * 8;
-
-        if(((dir <= 1 || dir > 7) && subMatrix[sub_c] > subMatrix[ee] && subMatrix[sub_c] > subMatrix[ww]) ||
-           ((dir > 1 && dir <= 3) && subMatrix[sub_c] > subMatrix[nw] && subMatrix[sub_c] > subMatrix[se]) ||
-           ((dir > 3 && dir <= 5) && subMatrix[sub_c] > subMatrix[nn] && subMatrix[sub_c] > subMatrix[ss]) ||
-           ((dir > 5 && dir <= 7) && subMatrix[sub_c] > subMatrix[ne] && subMatrix[sub_c] > subMatrix[sw]))
-            nms[c] = subMatrix[sub_c];
-        else
-            nms[c] = 0;
-    }
-}
-
-// Canny non-maximum suppression
-void non_maximum_supression_device(const pixel_t *after_Gx, const pixel_t * after_Gy,
-                    const pixel_t *G, pixel_t *nms, const int nx, const int ny)
-{
-    dim3 gridSize(ceil((nx - 2)/ 16.0), ceil((ny - 2)/ 32.0));              
-    dim3 blockSize(16, 32);             // 512 threads (x - 16, y - 32)
-    
-    non_maximum_supression_kernel <<<gridSize, blockSize>>> (after_Gx, after_Gy, G, nms);
-}
-
-__global__ void merging_gradients_kernel(const pixel_t *afterGx, const pixel_t *afterGy,
-                                        pixel_t *G)
-{
-    int x = threadIdx.x + blockIdx.x * blockDim.x + 1;
-    int y = threadIdx.y + blockIdx.y * blockDim.y + 1;
-    
-    if((x < (const_nx - 1)) && (y < (const_ny - 1)))
-    {
-        const int c = x + const_nx * y;
-        G[c] = (pixel_t)(hypot((double)(afterGx[c]), (double)( afterGy[c]) ));
-    }
-}
-
-void merging_gradients_device(const pixel_t *after_Gx, const pixel_t *after_Gy, pixel_t *G,
-                            const int nx, const int ny)
-{
-    dim3 gridSize(ceil((nx - 2)/ 16.0), ceil((ny - 2)/ 32.0));              
-    dim3 blockSize(16, 32);             // 512 threads (x - 16, y - 32)
-    
-    merging_gradients_kernel <<<gridSize, blockSize>>> (after_Gx, after_Gy, G);
-}
-
-__global__ void first_edges_kernel(const pixel_t *nms, pixel_t *ref)
-{
-    int x = threadIdx.x + blockIdx.x * blockDim.x + 1;
-    int y = threadIdx.y + blockIdx.y * blockDim.y + 1;
-
-    if((x < (const_nx - 1)) && (y < (const_ny - 1)))
-    {
-        size_t c = x + const_nx * y;
-        if(nms[c] >= const_tmax)
-            ref[c] = MAX_BRIGHTNESS;
-    }
-}
-
-// edges found in first pass for nms > tmax
-void first_edges_device(const pixel_t *nms, pixel_t *reference, const int nx, const int ny,
-                        const int tmax)
-{
-    cudaMemcpyToSymbol(const_tmax, &tmax, sizeof(int));
-
-    dim3 gridSize(ceil((nx - 2)/ 16.0), ceil((ny - 2)/ 32.0));              
-    dim3 blockSize(16, 32);             // 512 threads (x - 16, y - 32)
-
-    first_edges_kernel <<<gridSize, blockSize>>> (nms, reference);
-}
-
-__global__ void hysteresis_edges_kernel(const pixel_t *nms, pixel_t *ref, bool *changed)
-{
-    int x = threadIdx.x + blockIdx.x * blockDim.x + 1;
-    int y = threadIdx.y + blockIdx.y * blockDim.y + 1;
-
-    if((x < (const_nx - 1)) && (y < (const_ny - 1)))
-    {
-        const int width = 18;
-        const int height = 34;
-        const int size = width * height;
-        const bool vLimit = (y == const_ny-2);
-        const bool hLimit = (x == const_nx-2);
-
-        __shared__ pixel_t subMatrix[size];
-
-        int sub_x = threadIdx.x + 1;
-        int sub_y = threadIdx.y + 1;
-
-        size_t t = x + const_nx * y;
-        int sub_t = sub_y*width + sub_x;
-
-        int nbs[8];
-        nbs[0] = sub_t - width;
-        nbs[1] = sub_t + width;
-        nbs[2] = sub_t + 1;
-        nbs[3] = sub_t - 1;
-        nbs[4] = nbs[0] + 1;
-        nbs[5] = nbs[0] - 1;
-        nbs[6] = nbs[1] + 1;
-        nbs[7] = nbs[1] - 1;
-
-        if(sub_x == 1 && sub_y == 1)
-            subMatrix[nbs[5]] = ref[(y-1)*const_nx + x-1];
-        else if(sub_x == 1 && (vLimit || sub_y == height-2))
-            subMatrix[nbs[7]] = ref[(y+1)*const_nx + x-1];
-        else if((hLimit || sub_x == width-2) && sub_y == 1)
-            subMatrix[nbs[4]] = ref[(y-1)*const_nx + x+1];
-        else if((hLimit || sub_x == width-2) && (vLimit || sub_y == height-2))
-            subMatrix[nbs[6]] = ref[(y+1)*const_nx + x+1];
-
-        if(sub_x == 1)
-            subMatrix[nbs[3]] = ref[t-1];
-        else if(hLimit || sub_x == width-2)
-            subMatrix[nbs[2]] = ref[t+1];
-
-        if(sub_y == 1)
-            subMatrix[nbs[0]] = ref[(y-1)*const_nx + x];
-        else if(vLimit || sub_y == height-2)
-            subMatrix[nbs[1]] = ref[(y+1)*const_nx + x];
-
-        subMatrix[sub_t] = ref[t];
-
-        __syncthreads();
-
-
-        if(nms[t] >= const_tmin && subMatrix[sub_t] == 0)
-        {
-            for(int k = 0; k < 8; k++)
-                if(subMatrix[nbs[k]] != 0) {
-                    subMatrix[sub_t] = MAX_BRIGHTNESS;
-                    ref[t] = MAX_BRIGHTNESS;
-                    *changed = true;
-                    break;
-                }
-        }
-    }
-}
-
-// edges found in after first passes for nms > tmin && neighbor is edge
-void hysteresis_edges_device(const pixel_t *nms, pixel_t *reference, const int nx,
-                            const int ny, const int tmin)
-{
-    cudaMemcpyToSymbol(const_tmin, &tmin, sizeof(int));
-
-    dim3 gridSize(ceil((nx - 2)/ 16.0), ceil((ny - 2)/ 32.0));              
-    dim3 blockSize(16, 32);             // 512 threads (x - 16, y - 32)
-
-    bool changed;
-    bool *devChanged;
-
-    cudaMalloc((void**) &devChanged, sizeof(bool));
-
-    do{
-        changed = false;
-
-        cudaMemcpy(devChanged, &changed, sizeof(bool), cudaMemcpyHostToDevice);
-
-        hysteresis_edges_kernel <<<gridSize, blockSize>>> (nms, reference, devChanged);
-
-        cudaMemcpy(&changed, devChanged, sizeof(bool), cudaMemcpyDeviceToHost);
-    } while(changed);
-
-    cudaFree(devChanged);
-}
 
 // canny edge detector code to run on the GPU
 void cannyDevice( const int *h_idata, const int w, const int h, 
@@ -574,29 +324,29 @@ void cannyDevice( const int *h_idata, const int w, const int h,
 
     cudaMemcpyToSymbol(const_nx, &nx, sizeof(int));
     cudaMemcpyToSymbol(const_ny, &ny, sizeof(int));
+ 
+    pixel_t *G        = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
+    pixel_t *after_Gx = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
+    pixel_t *after_Gy = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
+    pixel_t *nms      = (pixel_t *) calloc(nx * ny, sizeof(pixel_t));
     
     // cuda pointers
     pixel_t *dev_h_odata;
-    pixel_t *dev_G;
     pixel_t *dev_after_Gx;
     pixel_t *dev_after_Gy;
-    pixel_t *dev_nms;
     float *dev_grad;
 
     cudaMalloc((void**) &dev_h_odata, memSize);
-    cudaMalloc((void**) &dev_G, memSize);
     cudaMalloc((void**) &dev_after_Gx, memSize);
     cudaMalloc((void**) &dev_after_Gy, memSize);
-    cudaMalloc((void**) &dev_nms, memSize);
     cudaMalloc((void**) &dev_grad, gradSize);
 
     cudaMemset(dev_h_odata, 0, memSize);
-    cudaMemset(dev_G, 0, memSize);
     cudaMemset(dev_after_Gx, 0, memSize);
     cudaMemset(dev_after_Gy, 0, memSize);
-    cudaMemset(dev_nms, 0, memSize);
 
-    if (h_odata == NULL) {
+    if (G == NULL || after_Gx == NULL || after_Gy == NULL ||
+        nms == NULL || h_odata == NULL) {
         fprintf(stderr, "canny_edge_detection:"
                 " Failed memory allocation(s).\n");
         exit(1);
@@ -604,7 +354,7 @@ void cannyDevice( const int *h_idata, const int w, const int h,
  
     // Gaussian filter using convolution_device
     gaussian_filter(h_idata, h_odata, nx, ny, sigma);
-    
+ 
     cudaMemcpy(dev_h_odata, h_odata, memSize, cudaMemcpyHostToDevice);
 
     const float Gx[] = {-1, 0, 1,
@@ -624,27 +374,40 @@ void cannyDevice( const int *h_idata, const int w, const int h,
 
     // Gradient along y
     convolution_device(dev_h_odata, dev_after_Gy, dev_grad, nx, ny, 3);
+    
+    cudaMemcpy(after_Gx, dev_after_Gx, memSize, cudaMemcpyDeviceToHost);
+    cudaMemcpy(after_Gy, dev_after_Gy, memSize, cudaMemcpyDeviceToHost);
 
-    merging_gradients_device(dev_after_Gx, dev_after_Gy, dev_G, nx, ny);
+    // Merging gradients
+    for (int i = 1; i < nx - 1; i++)
+        for (int j = 1; j < ny - 1; j++) {
+            const int c = i + nx * j;
+            G[c] = (pixel_t)(hypot((double)(after_Gx[c]), (double)( after_Gy[c]) ));
+        }
  
     // Non-maximum suppression, straightforward implementation.
-    non_maximum_supression_device(dev_after_Gx, dev_after_Gy, dev_G, dev_nms, nx, ny);
+    non_maximum_supression(after_Gx, after_Gy, G, nms, nx, ny);
 
     // edges with nms >= tmax
-    cudaMemset(dev_h_odata, 0, memSize);
-    first_edges_device(dev_nms, dev_h_odata, nx, ny, tmax);
+    memset(h_odata, 0, sizeof(pixel_t) * nx * ny);
+    first_edges(nms, h_odata, nx, ny, tmax);
 
     // edges with nms >= tmin && neighbor is edge
-    hysteresis_edges_device(dev_nms, dev_h_odata, nx, ny, tmin);
-    
-    cudaMemcpy(h_odata, dev_h_odata, memSize, cudaMemcpyDeviceToHost);
+    bool changed;
+    do {
+        changed = false;
+        hysteresis_edges(nms, h_odata, nx, ny, tmin, &changed);
+    } while (changed==true);
 
     cudaFree(dev_h_odata);
-    cudaFree(dev_G);
     cudaFree(dev_after_Gx);
     cudaFree(dev_after_Gy);
-    cudaFree(dev_nms);
     cudaFree(dev_grad);
+
+    free(after_Gx);
+    free(after_Gy);
+    free(G);
+    free(nms);
 }
 
 // print command line format
