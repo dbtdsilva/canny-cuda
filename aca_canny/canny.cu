@@ -34,7 +34,7 @@ texture<float, cudaTextureType1D, cudaReadModeElementType> tex_grad;
 texture<int, cudaTextureType1D, cudaReadModeElementType> tex_G;
 texture<int, cudaTextureType1D, cudaReadModeElementType> tex_after_Gx;
 texture<int, cudaTextureType1D, cudaReadModeElementType> tex_after_Gy;
-texture<int< cudaTextureType1D, cudaReadModeElementType> tex_nms;
+texture<int, cudaTextureType1D, cudaReadModeElementType> tex_nms;
 
 // convolution of in image to out image using kernel of kn width
 void convolution(const pixel_t *in, pixel_t *out, const float *kernel,
