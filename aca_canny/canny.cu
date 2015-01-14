@@ -29,7 +29,7 @@ __constant__ int const_khalf;
 
 // Textures
 texture<int, cudaTextureType1D, cudaReadModeElementType> tex_h_odata;
-texture<int< cudaTextureType1D, cudaReadModeElementType> tex_grad;
+texture<float, cudaTextureType1D, cudaReadModeElementType> tex_grad;
 
 // convolution of in image to out image using kernel of kn width
 void convolution(const pixel_t *in, pixel_t *out, const float *kernel,
