@@ -447,8 +447,6 @@ void cannyDevice( const int *h_idata, const int w, const int h,
     // Gradient along y
     convolution_device(dev_after_Gy, nx, ny, 3);
     cudaBindTexture(&offset, tex_after_Gy, dev_after_Gy, memSize);
-    cudaUnbindTexture(tex_grad);
-    cudaUnbindTexture(tex_h_odata);
 
     merging_gradients_device(dev_G, nx, ny);
 
