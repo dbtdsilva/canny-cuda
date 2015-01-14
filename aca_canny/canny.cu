@@ -552,7 +552,6 @@ __global__ void hysteresis_edges_kernel(const pixel_t *nms, pixel_t *ref, bool *
 
             if(nms[t] >= const_tmin && subMatrix[sub_t] == 0)
             {
-                #pragma unroll
                 for(int k = 0; k < 8; k++)
                     if(subMatrix[nbs[k]] != 0) {
                         subMatrix[sub_t] = MAX_BRIGHTNESS;
